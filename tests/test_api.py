@@ -1,4 +1,5 @@
 import hashlib
+from collections.abc import AsyncIterator
 
 import httpx
 import pytest
@@ -11,7 +12,7 @@ from profileproof.config import Settings
 async def test_health_and_readiness(client: httpx.AsyncClient) -> None:
     health = await client.get("/health")
     ready = await client.get("/readyz")
-    assert health.json() == {"status": "ok", "version": "1.0.0", "environment": "test"}
+    assert health.json() == {"status": "ok", "version": "1.1.0", "environment": "test"}
     assert ready.json()["status"] == "ready"
 
 
@@ -20,8 +21,32 @@ async def test_landing_and_openapi(client: httpx.AsyncClient) -> None:
     landing = await client.get("/")
     schema = await client.get("/openapi.json")
     assert "ProfileProof API" in landing.text
-    assert schema.json()["info"]["version"] == "1.0.0"
+    assert schema.json()["info"]["version"] == "1.1.0"
     assert "/v1/profiles/resolve" in schema.json()["paths"]
+
+
+@pytest.mark.asyncio
+async def test_documentation_assets_are_pinned_and_csp_is_scoped(
+    client: httpx.AsyncClient,
+) -> None:
+    landing = await client.get("/")
+    docs = await client.get("/docs")
+    redoc = await client.get("/redoc")
+
+    assert "unsafe-inline" not in landing.headers["content-security-policy"]
+    assert "swagger-ui-dist@5.32.14" in docs.text
+    assert "redoc@2.5.3" in redoc.text
+    assert "https://cdn.jsdelivr.net" in docs.headers["content-security-policy"]
+
+
+@pytest.mark.asyncio
+async def test_capabilities_do_not_expose_secrets(client: httpx.AsyncClient) -> None:
+    response = await client.get("/v1/capabilities")
+    assert response.status_code == 200
+    providers = {item["name"]: item for item in response.json()["providers"]}
+    assert providers["people_data_labs"]["configured"] is False
+    assert providers["people_data_labs"]["real_data"] is True
+    assert "api_key" not in response.text.casefold()
 
 
 @pytest.mark.asyncio
@@ -176,3 +201,27 @@ async def test_body_size_limit() -> None:
             headers={"content-type": "application/json"},
         )
     assert response.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_streamed_body_size_limit_cannot_be_bypassed() -> None:
+    app = create_app(Settings(environment="test", max_body_bytes=1024))
+
+    async def body_chunks() -> AsyncIterator[bytes]:
+        yield b"x" * 600
+        yield b"y" * 600
+
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as limited,
+    ):
+        response = await limited.post(
+            "/v1/profiles/resolve",
+            content=body_chunks(),
+            headers={"content-type": "application/json", "x-request-id": "stream-limit"},
+        )
+    assert response.status_code == 413
+    assert response.headers["x-request-id"] == "stream-limit"
+    assert response.headers["content-type"].startswith("application/problem+json")

@@ -1,34 +1,32 @@
 # Threat model
 
-## Assets
+## Assets and trust boundaries
 
-- caller-supplied professional data;
-- optional LinkedIn OIDC bearer tokens;
-- API availability and quota;
-- Cloud Run service identity and metadata endpoint;
-- integrity of provenance and synthetic-data labels.
-
-## Trust boundaries
-
-1. Public internet to Cloud Run HTTPS frontend.
-2. Cloud Run frontend to the application container.
-3. Application to the fixed LinkedIn OIDC `userinfo` endpoint.
-4. CI build to the produced container image.
+Assets include licensed provider credits and API key, professional-profile data,
+optional LinkedIn OIDC bearer tokens, service availability, Cloud Run identity,
+and the integrity of provenance. Trust boundaries are public internet to Cloud
+Run, Cloud Run to the container, the container to fixed PDL/LinkedIn endpoints,
+Secret Manager to the runtime identity, and CI to the container image.
 
 ## Principal threats and controls
 
 | Threat | Control | Residual risk |
 |---|---|---|
-| SSRF through `profile_url` | Strict LinkedIn hostname/path parsing; the URL is never fetched | Parser bugs; tests cover encoded and alternate-host cases |
-| Cloud metadata theft | No arbitrary outbound URL; fixed OIDC endpoint; no runtime IAM roles | A dependency compromise could still issue network calls |
-| Credential leakage | No passwords/cookies; bearer token used for one request and never logged or cached | Infrastructure access logs must also avoid authorization headers |
-| Fabricated provenance | Provider/mode/consent and warnings are mandatory response fields | A future provider must preserve these invariants |
-| Resource exhaustion | 64 KiB body limit, model collection limits, per-instance rate limit, bounded cache | Distributed clients require Cloud Armor or API Gateway |
-| PII retention | No database; consented and OIDC responses are not cached | Platform request tracing should remain body-free |
-| Supply-chain compromise | Locked dependencies, CI lint/type/test/container build, minimal runtime image | Add image signing and vulnerability scanning for regulated use |
-| XSS in demo UI | JSON rendered with `textContent`; CSP and `nosniff` headers | Swagger UI assets are framework-managed |
+| SSRF through `profile_url` | Strict LinkedIn hostname/path parser; user URL is never fetched; provider endpoints are constants; redirects disabled | Parser or dependency defects; adversarial URL tests cover common variants |
+| Provider-credit abuse | Request throttling, one-instance production cap, per-instance daily provider quota, TTL cache, identical-request single-flight | Distributed abuse still needs API Gateway/Cloud Armor and a shared quota store before scaling out |
+| Incorrect identity match | PDL likelihood threshold defaults to 8/10; returned LinkedIn identifier must equal the requested identifier | Upstream source records can still be stale or wrong |
+| Excessive personal-data collection | `data_include` requests named professional subfields only; API omits contact, email, phone, address, and unrelated social fields | Requested summaries may contain free-form personal information |
+| Secret or token leakage | PDL key from Secret Manager; no key in capabilities/logs; OIDC token is neither logged nor cached; API keys stored as digests | Platform configuration and privileged operators remain trusted |
+| Credential/session compromise | No passwords, copied browser cookies, login automation, or undocumented LinkedIn endpoints | Licensed-provider account compromise remains possible and requires key rotation |
+| Resource exhaustion | Streaming 64 KiB request limit, bounded models/cache/rate-limit identities, provider timeout, Cloud Run concurrency and scale caps | Slow upstream responses consume slots until timeout |
+| Cache privacy | Licensed records cached only in process memory for one hour; no database or disk persistence | Instance-memory inspection by a privileged operator is out of scope |
+| Fabricated provenance | Provider, mode, license/consent flags, confidence, dataset version, limitations, and warnings are typed response fields | A future provider implementation must preserve the invariant |
+| Supply-chain compromise | Locked dependencies, static analysis, strict typing, tests, dependency audit, minimal non-root image | Add signing, attestations, and continuous image scanning for regulated environments |
+| XSS in demo UI | Static same-origin JS/CSS, JSON inserted with `textContent`, restrictive CSP and `nosniff` | Framework-hosted documentation pages have a separate asset surface |
 
 ## Non-goals
 
-The service does not evade access controls, automate login, solve challenges,
-reuse browser sessions, crawl search results, or provide identity verification.
+The service does not evade access controls, automate sign-in, solve challenges,
+reuse browser sessions, crawl search results, guarantee dataset correctness, or
+perform identity verification. It is a typed licensed-enrichment boundary with
+explicit uncertainty and provenance.

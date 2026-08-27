@@ -8,6 +8,7 @@ class ProviderName(StrEnum):
     DEMO = "demo"
     CONSENTED = "consented"
     LINKEDIN_OIDC = "linkedin_oidc"
+    PEOPLE_DATA_LABS = "people_data_labs"
 
 
 class DateRange(BaseModel):
@@ -105,6 +106,9 @@ class SourceInfo(BaseModel):
     provider: ProviderName
     mode: str
     consented: bool
+    licensed: bool = False
+    match_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    dataset_version: str | None = None
     limitations: list[str] = Field(default_factory=list)
 
 
@@ -118,7 +122,7 @@ class ResolveMeta(BaseModel):
 
 
 class ProfileResponse(BaseModel):
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
     canonical_url: HttpUrl
     public_identifier: str
     profile: ProfileData
@@ -130,6 +134,17 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     environment: str
+
+
+class ProviderCapability(BaseModel):
+    name: ProviderName
+    configured: bool
+    real_data: bool
+    description: str
+
+
+class CapabilitiesResponse(BaseModel):
+    providers: list[ProviderCapability]
 
 
 class Problem(BaseModel):

@@ -20,6 +20,12 @@ class ProviderUnavailable(ProfileProofError):
     problem_type = "https://profileproof.dev/problems/provider-unavailable"
 
 
+class ProfileNotFound(ProfileProofError):
+    status_code = 404
+    title = "Profile not found"
+    problem_type = "https://profileproof.dev/problems/profile-not-found"
+
+
 class ProviderRejected(ProfileProofError):
     status_code = 502
     title = "Upstream provider rejected the request"

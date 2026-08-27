@@ -11,24 +11,52 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from . import __version__
 from .cache import TtlCache
 from .config import Settings, get_settings
 from .errors import ProfileProofError, RateLimitExceeded
 from .metrics import Metrics
-from .models import HealthResponse, Problem, ProfileResponse, ProviderName, ResolveRequest
-from .providers import ConsentedProvider, DemoProvider, LinkedInOidcProvider
+from .models import (
+    CapabilitiesResponse,
+    HealthResponse,
+    Problem,
+    ProfileResponse,
+    ProviderCapability,
+    ProviderName,
+    ResolveRequest,
+)
+from .providers import (
+    ConsentedProvider,
+    DemoProvider,
+    LinkedInOidcProvider,
+    PeopleDataLabsProvider,
+)
 from .providers.base import ProfileProvider
 from .rate_limit import SlidingWindowLimiter
 from .service import ProfileService
 
 logger = logging.getLogger("profileproof")
 _LANDING_PAGE = Path(__file__).with_name("static").joinpath("index.html")
+_STATIC_DIRECTORY = _LANDING_PAGE.parent
+_APP_CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self'; "
+    "img-src 'self' data: https://media.licdn.com; frame-ancestors 'none'; "
+    "base-uri 'none'; form-action 'self'; object-src 'none'"
+)
+_DOCS_CSP = (
+    "default-src 'none'; script-src https://cdn.jsdelivr.net 'unsafe-inline'; "
+    "style-src https://cdn.jsdelivr.net 'unsafe-inline'; "
+    "img-src data: https://fastapi.tiangolo.com; "
+    "connect-src 'self'; worker-src blob:; frame-ancestors 'none'; base-uri 'none'; "
+    "form-action 'none'"
+)
 _METRIC_ROUTES = frozenset(
     {
         "/",
@@ -40,8 +68,72 @@ _METRIC_ROUTES = frozenset(
         "/readyz",
         "/metrics",
         "/v1/profiles/resolve",
+        "/v1/capabilities",
     }
 )
+
+
+class RequestBodyLimitMiddleware:
+    """Reject oversized streamed bodies before they can be buffered by the framework."""
+
+    def __init__(self, app: ASGIApp, max_body_bytes: int) -> None:
+        self._app = app
+        self._max_body_bytes = max_body_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+        if scope.get("method") not in {"POST", "PUT", "PATCH"}:
+            await self._app(scope, receive, send)
+            return
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                await self._app(scope, receive, send)
+                return
+            body.extend(message.get("body", b""))
+            if len(body) > self._max_body_bytes:
+                await self._reject(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+        replayed = False
+
+        async def replay_receive() -> Message:
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": bytes(body), "more_body": False}
+            return await receive()
+
+        await self._app(scope, replay_receive, send)
+
+    async def _reject(self, scope: Scope, receive: Receive, send: Send) -> None:
+        headers = dict(scope.get("headers", []))
+        request_id = headers.get(b"x-request-id", str(uuid.uuid4()).encode()).decode(
+            errors="replace"
+        )[:128]
+        response = JSONResponse(
+            status_code=413,
+            content={
+                "type": "https://profileproof.dev/problems/body-too-large",
+                "title": "Request body too large",
+                "status": 413,
+                "detail": f"The request body must not exceed {self._max_body_bytes} bytes.",
+                "instance": scope.get("path", "unknown"),
+                "request_id": request_id,
+            },
+            media_type="application/problem+json",
+            headers={
+                "X-Request-ID": request_id,
+                "X-Content-Type-Options": "nosniff",
+                "X-Frame-Options": "DENY",
+                "Cache-Control": "no-store",
+            },
+        )
+        await response(scope, receive, send)
 
 
 def _problem(
@@ -103,16 +195,6 @@ class ApiMiddleware(BaseHTTPMiddleware):
                         "https://profileproof.dev/problems/body-too-large",
                     )
                     return await self._finalize(request, response, started)
-                body = await request.body()
-                if len(body) > self._settings.max_body_bytes:
-                    response = _problem(
-                        request,
-                        413,
-                        "Request body too large",
-                        f"The request body must not exceed {self._settings.max_body_bytes} bytes.",
-                        "https://profileproof.dev/problems/body-too-large",
-                    )
-                    return await self._finalize(request, response, started)
             if path.startswith("/v1/"):
                 allowed, remaining, retry_after = await self._limiter.allow(_client_key(request))
                 if not allowed:
@@ -145,8 +227,7 @@ class ApiMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' "
-            "'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
+            _DOCS_CSP if request.url.path in {"/docs", "/redoc"} else _APP_CSP
         )
         if hasattr(request.state, "rate_limit_remaining"):
             response.headers["X-RateLimit-Remaining"] = str(request.state.rate_limit_remaining)
@@ -175,36 +256,46 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with httpx.AsyncClient(
-            timeout=config.oidc_timeout_seconds,
+            timeout=max(config.oidc_timeout_seconds, config.pdl_timeout_seconds),
             follow_redirects=False,
             transport=oidc_transport,
         ) as oidc_client:
+            pdl_provider = PeopleDataLabsProvider(
+                oidc_client,
+                config.pdl_api_key.get_secret_value() if config.pdl_api_key else None,
+                config.pdl_min_likelihood,
+                config.pdl_calls_per_instance_per_day,
+            )
             providers: dict[ProviderName, ProfileProvider] = {
                 ProviderName.DEMO: DemoProvider(),
                 ProviderName.CONSENTED: ConsentedProvider(),
                 ProviderName.LINKEDIN_OIDC: LinkedInOidcProvider(oidc_client),
+                ProviderName.PEOPLE_DATA_LABS: pdl_provider,
             }
             app.state.service = ProfileService(
                 providers=providers,
                 cache=TtlCache(config.cache_ttl_seconds),
             )
             app.state.metrics = Metrics()
+            app.state.pdl_configured = pdl_provider.configured
             yield
 
     application = FastAPI(
         title="ProfileProof API",
         version=__version__,
-        summary="Consent-first professional profile normalization",
+        summary="Professional profile normalization with licensed real-data enrichment",
         description=(
-            "Normalizes professional profile data from explicit, auditable providers. "
-            "The public service never uses copied LinkedIn cookies or undocumented APIs."
+            "Normalizes real licensed, owner-consented, official self-profile, and synthetic "
+            "professional data through explicit providers with provenance."
         ),
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url=None,
+        redoc_url=None,
         openapi_url="/openapi.json",
         lifespan=lifespan,
     )
     application.add_middleware(ApiMiddleware, settings=config)
+    application.add_middleware(RequestBodyLimitMiddleware, max_body_bytes=config.max_body_bytes)
+    application.mount("/static", StaticFiles(directory=_STATIC_DIRECTORY), name="static")
 
     @application.exception_handler(ProfileProofError)
     async def profileproof_error(request: Request, error: ProfileProofError) -> JSONResponse:
@@ -228,6 +319,25 @@ def create_app(
     async def landing() -> HTMLResponse:
         return HTMLResponse(_LANDING_PAGE.read_text(encoding="utf-8"))
 
+    @application.get("/docs", response_class=HTMLResponse, include_in_schema=False)
+    async def swagger_docs() -> HTMLResponse:
+        return get_swagger_ui_html(
+            openapi_url=application.openapi_url or "/openapi.json",
+            title=f"{application.title} - Swagger UI",
+            swagger_js_url=(
+                "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.14/swagger-ui-bundle.js"
+            ),
+            swagger_css_url=("https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.14/swagger-ui.css"),
+        )
+
+    @application.get("/redoc", response_class=HTMLResponse, include_in_schema=False)
+    async def redoc_docs() -> HTMLResponse:
+        return get_redoc_html(
+            openapi_url=application.openapi_url or "/openapi.json",
+            title=f"{application.title} - ReDoc",
+            redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@2.5.3/bundles/redoc.standalone.js",
+        )
+
     @application.get("/health", response_model=HealthResponse, tags=["operations"])
     async def health() -> HealthResponse:
         return HealthResponse(status="ok", version=__version__, environment=config.environment)
@@ -241,6 +351,37 @@ def create_app(
     @application.get("/metrics", response_class=PlainTextResponse, tags=["operations"])
     async def metrics(request: Request) -> PlainTextResponse:
         return PlainTextResponse(await request.app.state.metrics.render())
+
+    @application.get("/v1/capabilities", response_model=CapabilitiesResponse, tags=["operations"])
+    async def capabilities(request: Request) -> CapabilitiesResponse:
+        return CapabilitiesResponse(
+            providers=[
+                ProviderCapability(
+                    name=ProviderName.PEOPLE_DATA_LABS,
+                    configured=bool(request.app.state.pdl_configured),
+                    real_data=True,
+                    description="Licensed real-profile enrichment matched by LinkedIn URL.",
+                ),
+                ProviderCapability(
+                    name=ProviderName.LINKEDIN_OIDC,
+                    configured=True,
+                    real_data=True,
+                    description="Official authenticated-member lite profile.",
+                ),
+                ProviderCapability(
+                    name=ProviderName.CONSENTED,
+                    configured=True,
+                    real_data=True,
+                    description="Owner-supplied profile normalization without persistence.",
+                ),
+                ProviderCapability(
+                    name=ProviderName.DEMO,
+                    configured=config.enable_demo_provider,
+                    real_data=False,
+                    description="Deterministic synthetic integration fixture.",
+                ),
+            ]
+        )
 
     @application.post(
         "/v1/profiles/resolve",

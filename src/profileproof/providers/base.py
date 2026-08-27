@@ -16,6 +16,9 @@ class ProviderResult:
     profile: ProfileData
     mode: str
     consented: bool
+    licensed: bool = False
+    match_confidence: float | None = None
+    dataset_version: str | None = None
     limitations: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
