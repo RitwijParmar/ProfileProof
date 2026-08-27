@@ -17,7 +17,7 @@ member. This is a deliberate engineering decision, not an omitted secret.
 Open the landing page and press **Run live request**, or call the API:
 
 ```bash
-curl -sS https://PROFILEPROOF_SERVICE_URL/v1/profiles/resolve \
+curl -sS https://profileproof-api-980932890834.us-east1.run.app/v1/profiles/resolve \
   -H 'Content-Type: application/json' \
   -d '{"profile_url":"https://www.linkedin.com/in/profileproof-demo","provider":"demo"}'
 ```
@@ -171,5 +171,7 @@ documented.
 
 The tested Cloud Run procedure, least-privilege service identity, verification
 commands, and rollback steps are documented in [docs/deployment.md](docs/deployment.md).
+
+**Live deployment:** <https://profileproof-api-980932890834.us-east1.run.app>
 
 MIT licensed.

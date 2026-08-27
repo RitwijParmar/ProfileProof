@@ -43,7 +43,7 @@ pinned secret version as `PROFILEPROOF_API_KEY_SHA256`.
 SERVICE_URL="$(gcloud run services describe "$SERVICE" \
   --region "$REGION" --format='value(status.url)')"
 
-curl -fsS "$SERVICE_URL/healthz"
+curl -fsS "$SERVICE_URL/health"
 curl -fsS "$SERVICE_URL/v1/profiles/resolve" \
   -H 'Content-Type: application/json' \
   -d '{"profile_url":"https://www.linkedin.com/in/profileproof-demo","provider":"demo"}'

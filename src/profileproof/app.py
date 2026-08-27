@@ -35,6 +35,7 @@ _METRIC_ROUTES = frozenset(
         "/docs",
         "/redoc",
         "/openapi.json",
+        "/health",
         "/healthz",
         "/readyz",
         "/metrics",
@@ -227,9 +228,11 @@ def create_app(
     async def landing() -> HTMLResponse:
         return HTMLResponse(_LANDING_PAGE.read_text(encoding="utf-8"))
 
-    @application.get("/healthz", response_model=HealthResponse, tags=["operations"])
+    @application.get("/health", response_model=HealthResponse, tags=["operations"])
     async def health() -> HealthResponse:
         return HealthResponse(status="ok", version=__version__, environment=config.environment)
+
+    application.add_api_route("/healthz", health, methods=["GET"], include_in_schema=False)
 
     @application.get("/readyz", response_model=HealthResponse, tags=["operations"])
     async def readiness() -> HealthResponse:

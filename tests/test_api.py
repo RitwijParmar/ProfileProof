@@ -9,7 +9,7 @@ from profileproof.config import Settings
 
 @pytest.mark.asyncio
 async def test_health_and_readiness(client: httpx.AsyncClient) -> None:
-    health = await client.get("/healthz")
+    health = await client.get("/health")
     ready = await client.get("/readyz")
     assert health.json() == {"status": "ok", "version": "1.0.0", "environment": "test"}
     assert ready.json()["status"] == "ready"
@@ -98,7 +98,7 @@ async def test_consented_profile_is_normalized_without_persistence(
 
 @pytest.mark.asyncio
 async def test_security_headers_are_present(client: httpx.AsyncClient) -> None:
-    response = await client.get("/healthz")
+    response = await client.get("/health")
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
