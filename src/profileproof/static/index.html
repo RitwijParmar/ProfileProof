@@ -3,56 +3,211 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Resolve professional profiles into stable, provenance-rich JSON.">
-  <title>ProfileProof API</title>
+  <meta name="description" content="Turn professional profile URLs into structured, traceable career data.">
+  <meta name="theme-color" content="#07110e">
+  <title>ProfileProof — Professional profile intelligence</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
-  <main class="wrap">
-    <header>
-      <div class="brand">PROFILE<span>PROOF</span></div>
-      <div class="badge">API ONLINE</div>
-    </header>
-    <section class="hero">
-      <div>
-        <p class="eyebrow">PROFILE ACQUISITION · NORMALIZATION · PROVENANCE</p>
-        <h1>Real profile data.<br>Typed and traceable.</h1>
-        <p class="lead">A production profile-resolution API with licensed enrichment,
-          official OAuth, strict schemas, confidence scoring, and honest source metadata.</p>
+  <a class="skip-link" href="#workspace">Skip to results</a>
+  <div class="backdrop" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="ProfileProof home">
+      <span class="brand-mark" aria-hidden="true">P</span>
+      <span>ProfileProof</span>
+    </a>
+    <nav aria-label="Product navigation">
+      <a href="/docs">API docs</a>
+      <a href="/openapi.json">OpenAPI</a>
+      <span class="service-status"><span class="pulse" aria-hidden="true"></span>API operational</span>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span></span>Professional data infrastructure</p>
+        <h1 id="hero-title">From profile URL to<br><em>decision-ready data.</em></h1>
+        <p class="hero-lead">Resolve professional identities into a stable schema with
+          verified matching, confidence signals, and source-level provenance.</p>
+        <ul class="trust-list" aria-label="Platform capabilities">
+          <li>Typed schema</li>
+          <li>Identity checked</li>
+          <li>Traceable source</li>
+        </ul>
       </div>
-      <div class="callout">
-        <strong>REAL-DATA PIPELINE</strong>
-        <p>The primary provider matches LinkedIn URLs against a licensed professional dataset.
-          Copied browser sessions and undocumented account APIs are never required.</p>
-        <div id="capability-status" class="status">Checking provider configuration…</div>
+
+      <div class="proof-card" aria-label="Pipeline overview">
+        <div class="proof-header">
+          <span>Resolution pipeline</span>
+          <span class="live-tag">LIVE API</span>
+        </div>
+        <ol class="pipeline">
+          <li><span>01</span><div><strong>Canonicalize</strong><small>Validate identity URL</small></div><b>✓</b></li>
+          <li><span>02</span><div><strong>Enrich</strong><small>Query licensed dataset</small></div><b>✓</b></li>
+          <li><span>03</span><div><strong>Verify</strong><small>Score and match identity</small></div><b>✓</b></li>
+          <li><span>04</span><div><strong>Normalize</strong><small>Return stable typed JSON</small></div><b>✓</b></li>
+        </ol>
       </div>
     </section>
-    <section class="grid">
-      <form class="panel" id="form">
-        <h2>Resolve profile</h2>
-        <label for="url">LinkedIn profile URL</label>
-        <input id="url" value="https://www.linkedin.com/in/seanthorne" maxlength="500"
-               autocomplete="off" spellcheck="false">
-        <label for="provider">Provider</label>
-        <select id="provider">
-          <option value="people_data_labs">Licensed real data</option>
-          <option value="demo">Synthetic fallback</option>
-        </select>
-        <button id="submit" type="submit">Run live request</button>
-        <p class="fineprint">Every response includes source mode, licensing state, match
-          confidence, dataset version, completeness, cache state, and limitations.</p>
-        <div class="links">
-          <a href="/docs">Swagger UI</a>
-          <a href="/redoc">ReDoc</a>
-          <a href="/openapi.json">OpenAPI JSON</a>
+
+    <section class="resolver" aria-labelledby="resolver-title">
+      <div class="resolver-heading">
+        <div>
+          <p class="section-label">Profile resolver</p>
+          <h2 id="resolver-title">Inspect a professional profile</h2>
         </div>
+        <div id="mode-badge" class="mode-badge" aria-live="polite">
+          <span class="mode-dot" aria-hidden="true"></span>
+          <span id="mode-text">Checking data source…</span>
+        </div>
+      </div>
+
+      <form id="form" class="search-form" novalidate>
+        <div class="url-field">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10.6 13.4a4 4 0 0 0 5.7 0l2.1-2.1a4 4 0 0 0-5.7-5.7l-1.2 1.2m1.9 3.8a4 4 0 0 0-5.7 0l-2.1 2.1a4 4 0 0 0 5.7 5.7l1.2-1.2"/></svg>
+          <label class="sr-only" for="url">LinkedIn profile URL</label>
+          <input id="url" name="profile_url" inputmode="url" maxlength="500"
+                 autocomplete="off" spellcheck="false"
+                 placeholder="https://www.linkedin.com/in/username">
+        </div>
+        <button id="submit" class="primary-button" type="submit">
+          <span id="submit-text">Analyze profile</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
       </form>
-      <section class="panel result-panel">
-        <div class="meta" id="meta">POST /v1/profiles/resolve</div>
-        <pre id="output">Choose a provider and run a live request.</pre>
-      </section>
+      <div class="search-support">
+        <p id="mode-help">Preparing the resolver…</p>
+        <button id="sample-button" class="text-button" type="button">Load sample profile</button>
+      </div>
+    </section>
+
+    <section id="workspace" class="workspace" aria-live="polite" aria-busy="false">
+      <div id="loading-state" class="loading-state" hidden>
+        <div class="loading-avatar shimmer"></div>
+        <div class="loading-copy"><span class="shimmer"></span><span class="shimmer"></span><span class="shimmer"></span></div>
+        <p>Resolving identity and normalizing profile data…</p>
+      </div>
+
+      <div id="error-state" class="error-state" role="alert" hidden>
+        <div class="error-icon" aria-hidden="true">!</div>
+        <div>
+          <p class="section-label">Request could not be completed</p>
+          <h2 id="error-title">Profile resolution failed</h2>
+          <p id="error-detail"></p>
+          <div class="error-actions">
+            <button id="retry-button" class="secondary-button" type="button">Try again</button>
+            <button id="error-sample-button" class="text-button" type="button">Open sample profile</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="empty-state" class="empty-state">
+        <div class="empty-visual" aria-hidden="true">
+          <span></span><span></span><span></span>
+          <div>PP</div>
+        </div>
+        <p class="section-label">Structured output</p>
+        <h2>A complete profile view will appear here.</h2>
+        <p>Search a LinkedIn URL or explore the sample to see identity, career history,
+          education, skills, completeness, and full provenance.</p>
+        <button id="empty-sample-button" class="secondary-button" type="button">Explore sample data</button>
+      </div>
+
+      <article id="profile-result" class="profile-result" hidden>
+        <header class="profile-header">
+          <div id="avatar" class="avatar" aria-hidden="true">PP</div>
+          <div class="identity">
+            <div class="identity-row">
+              <h2 id="profile-name">Profile name</h2>
+              <span id="source-chip" class="source-chip">Source</span>
+            </div>
+            <p id="profile-headline" class="profile-headline"></p>
+            <p id="profile-location" class="profile-location"></p>
+          </div>
+          <a id="profile-link" class="external-link" href="#" target="_blank" rel="noreferrer">
+            View source <span aria-hidden="true">↗</span>
+          </a>
+        </header>
+
+        <section class="signal-grid" aria-label="Resolution signals">
+          <div class="signal"><span>Completeness</span><strong id="completeness">—</strong><small id="field-count">—</small></div>
+          <div class="signal"><span>Match confidence</span><strong id="confidence">—</strong><small id="confidence-label">Not provided</small></div>
+          <div class="signal"><span>Response time</span><strong id="latency">—</strong><small id="cache-label">Live request</small></div>
+          <div class="signal"><span>Schema</span><strong id="schema-version">—</strong><small id="dataset-version">Versioned contract</small></div>
+        </section>
+
+        <div class="tab-bar" role="tablist" aria-label="Profile result views">
+          <button id="overview-tab" role="tab" aria-selected="true" aria-controls="overview-panel" type="button">Overview</button>
+          <button id="json-tab" role="tab" aria-selected="false" aria-controls="json-panel" type="button">Raw JSON</button>
+        </div>
+
+        <div id="overview-panel" role="tabpanel" aria-labelledby="overview-tab" class="overview-grid">
+          <div class="main-column">
+            <section id="about-section" class="content-section">
+              <p class="section-label">About</p>
+              <p id="about-text" class="body-copy"></p>
+            </section>
+            <section id="experience-section" class="content-section">
+              <div class="section-heading"><p class="section-label">Experience</p><span id="experience-count"></span></div>
+              <div id="experience-list" class="timeline"></div>
+            </section>
+            <section id="education-section" class="content-section">
+              <div class="section-heading"><p class="section-label">Education</p><span id="education-count"></span></div>
+              <div id="education-list" class="timeline"></div>
+            </section>
+          </div>
+          <aside class="side-column">
+            <section id="skills-section" class="content-section compact">
+              <p class="section-label">Skills</p>
+              <div id="skills-list" class="chip-list"></div>
+            </section>
+            <section id="certifications-section" class="content-section compact">
+              <p class="section-label">Certifications</p>
+              <div id="certifications-list" class="detail-list"></div>
+            </section>
+            <section id="languages-section" class="content-section compact">
+              <p class="section-label">Languages</p>
+              <div id="languages-list" class="detail-list"></div>
+            </section>
+            <section class="content-section compact provenance-card">
+              <p class="section-label">Provenance</p>
+              <dl id="provenance-list"></dl>
+              <div id="limitations" class="limitations"></div>
+            </section>
+          </aside>
+        </div>
+
+        <div id="json-panel" role="tabpanel" aria-labelledby="json-tab" hidden>
+          <div class="json-toolbar">
+            <span>Normalized response</span>
+            <button id="copy-json" class="text-button" type="button">Copy JSON</button>
+          </div>
+          <pre id="json-output"></pre>
+        </div>
+
+        <footer class="result-footer">
+          <span id="request-meta"></span>
+          <span>Professional fields only · no contact data stored</span>
+        </footer>
+      </article>
+    </section>
+
+    <section class="platform-strip" aria-label="Platform qualities">
+      <div><strong>01</strong><span>Strict URL policy</span><small>Known hosts and paths only</small></div>
+      <div><strong>02</strong><span>Identity verification</span><small>Returned profile must match</small></div>
+      <div><strong>03</strong><span>Explicit provenance</span><small>Source and limitations attached</small></div>
+      <div><strong>04</strong><span>Production controls</span><small>Quota, cache, metrics, tracing</small></div>
     </section>
   </main>
+
+  <footer class="site-footer">
+    <span>ProfileProof <b>v1.1</b></span>
+    <span>Built as a production data boundary</span>
+    <div><a href="/docs">Swagger</a><a href="/redoc">ReDoc</a><a href="/metrics">Metrics</a></div>
+  </footer>
 </body>
 </html>

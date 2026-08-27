@@ -19,8 +19,16 @@ async def test_health_and_readiness(client: httpx.AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_landing_and_openapi(client: httpx.AsyncClient) -> None:
     landing = await client.get("/")
+    script = await client.get("/static/app.js")
+    stylesheet = await client.get("/static/app.css")
+    favicon = await client.get("/static/favicon.svg")
     schema = await client.get("/openapi.json")
-    assert "ProfileProof API" in landing.text
+    assert "Professional profile intelligence" in landing.text
+    assert 'role="tablist"' in landing.text
+    assert 'aria-live="polite"' in landing.text
+    assert "renderProfile" in script.text
+    assert "@media (max-width: 680px)" in stylesheet.text
+    assert favicon.headers["content-type"].startswith("image/svg+xml")
     assert schema.json()["info"]["version"] == "1.1.0"
     assert "/v1/profiles/resolve" in schema.json()["paths"]
 
