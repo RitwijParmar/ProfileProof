@@ -26,9 +26,9 @@ class DemoProvider:
         del context
         if profile_url.public_identifier != self.public_identifier:
             raise ProviderUnavailable(
-                "The public deployment does not scrape arbitrary LinkedIn profiles. "
-                "Use https://www.linkedin.com/in/profileproof-demo for the synthetic demo, "
-                "submit owner-consented data, or configure an approved LinkedIn integration."
+                "The demo provider accepts only its synthetic fixture. "
+                "Use https://www.linkedin.com/in/profileproof-demo for the fixture or omit "
+                "provider to use the direct LinkedIn acquisition path."
             )
         profile = ProfileData(
             name="Aarav Mehta",

@@ -121,7 +121,7 @@ def _payload(public_identifier: str = "ritwij-aryan-parmar-716024211") -> dict[s
 async def _request(handler: Callable[[httpx.Request], httpx.Response]) -> httpx.Response:
     app = create_app(
         Settings(environment="test", linkedin_li_at="li-at-secret", linkedin_jsessionid="ajax:123"),
-        oidc_transport=httpx.MockTransport(handler),
+        upstream_transport=httpx.MockTransport(handler),
     )
     async with (
         app.router.lifespan_context(app),

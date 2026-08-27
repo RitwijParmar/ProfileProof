@@ -33,11 +33,8 @@ from .models import (
     ResolveRequest,
 )
 from .providers import (
-    ConsentedProvider,
     DemoProvider,
-    LinkedInOidcProvider,
     LinkedInSessionProvider,
-    PeopleDataLabsProvider,
 )
 from .providers.base import ProfileProvider
 from .rate_limit import SlidingWindowLimiter
@@ -250,29 +247,19 @@ class ApiMiddleware(BaseHTTPMiddleware):
 
 def create_app(
     settings: Settings | None = None,
-    oidc_transport: httpx.AsyncBaseTransport | None = None,
+    upstream_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     config = settings or get_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with httpx.AsyncClient(
-            timeout=max(
-                config.oidc_timeout_seconds,
-                config.linkedin_timeout_seconds,
-                config.pdl_timeout_seconds,
-            ),
+            timeout=config.linkedin_timeout_seconds,
             follow_redirects=False,
-            transport=oidc_transport,
-        ) as oidc_client:
-            pdl_provider = PeopleDataLabsProvider(
-                oidc_client,
-                config.pdl_api_key.get_secret_value() if config.pdl_api_key else None,
-                config.pdl_min_likelihood,
-                config.pdl_calls_per_instance_per_day,
-            )
+            transport=upstream_transport,
+        ) as upstream_client:
             linkedin_provider = LinkedInSessionProvider(
-                oidc_client,
+                upstream_client,
                 config.linkedin_li_at.get_secret_value() if config.linkedin_li_at else None,
                 (
                     config.linkedin_jsessionid.get_secret_value()
@@ -283,17 +270,13 @@ def create_app(
             )
             providers: dict[ProviderName, ProfileProvider] = {
                 ProviderName.DEMO: DemoProvider(),
-                ProviderName.CONSENTED: ConsentedProvider(),
-                ProviderName.LINKEDIN_OIDC: LinkedInOidcProvider(oidc_client),
                 ProviderName.LINKEDIN_SESSION: linkedin_provider,
-                ProviderName.PEOPLE_DATA_LABS: pdl_provider,
             }
             app.state.service = ProfileService(
                 providers=providers,
                 cache=TtlCache(config.cache_ttl_seconds),
             )
             app.state.metrics = Metrics()
-            app.state.pdl_configured = pdl_provider.configured
             app.state.linkedin_configured = linkedin_provider.configured
             yield
 
@@ -378,24 +361,6 @@ def create_app(
                     configured=bool(request.app.state.linkedin_configured),
                     real_data=True,
                     description="Authenticated LinkedIn profile-page acquisition.",
-                ),
-                ProviderCapability(
-                    name=ProviderName.PEOPLE_DATA_LABS,
-                    configured=bool(request.app.state.pdl_configured),
-                    real_data=True,
-                    description="Licensed real-profile enrichment matched by LinkedIn URL.",
-                ),
-                ProviderCapability(
-                    name=ProviderName.LINKEDIN_OIDC,
-                    configured=True,
-                    real_data=True,
-                    description="Official authenticated-member lite profile.",
-                ),
-                ProviderCapability(
-                    name=ProviderName.CONSENTED,
-                    configured=True,
-                    real_data=True,
-                    description="Owner-supplied profile normalization without persistence.",
                 ),
                 ProviderCapability(
                     name=ProviderName.DEMO,

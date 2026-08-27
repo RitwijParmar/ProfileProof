@@ -52,9 +52,9 @@ async def test_capabilities_do_not_expose_secrets(client: httpx.AsyncClient) -> 
     response = await client.get("/v1/capabilities")
     assert response.status_code == 200
     providers = {item["name"]: item for item in response.json()["providers"]}
-    assert providers["people_data_labs"]["configured"] is False
-    assert providers["people_data_labs"]["real_data"] is True
-    assert "api_key" not in response.text.casefold()
+    assert set(providers) == {"linkedin_session", "demo"}
+    assert providers["linkedin_session"]["real_data"] is True
+    assert "secret" not in response.text.casefold()
 
 
 @pytest.mark.asyncio
@@ -90,7 +90,7 @@ async def test_arbitrary_demo_url_fails_honestly(client: httpx.AsyncClient) -> N
     )
     assert response.status_code == 424
     assert response.headers["content-type"].startswith("application/problem+json")
-    assert "does not scrape" in response.json()["detail"]
+    assert "synthetic fixture" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -108,28 +108,6 @@ async def test_request_validation_uses_problem_details(client: httpx.AsyncClient
     response = await client.post("/v1/profiles/resolve", json={"unexpected": True})
     assert response.status_code == 422
     assert response.json()["type"].endswith("/validation")
-
-
-@pytest.mark.asyncio
-async def test_consented_profile_is_normalized_without_persistence(
-    client: httpx.AsyncClient,
-) -> None:
-    response = await client.post(
-        "/v1/profiles/resolve",
-        json={
-            "profile_url": "https://www.linkedin.com/in/owner-supplied",
-            "provider": "consented",
-            "consented_profile": {
-                "name": "Owner Supplied",
-                "headline": "Principal Engineer",
-                "skills": [" Python ", "Python", "Go"],
-            },
-        },
-    )
-    assert response.status_code == 200
-    assert response.json()["profile"]["skills"] == ["Python", "Go"]
-    assert response.json()["source"]["consented"] is True
-    assert response.json()["meta"]["cached"] is False
 
 
 @pytest.mark.asyncio

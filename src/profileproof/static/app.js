@@ -124,10 +124,7 @@ function confidenceLabel(value) {
 
 function sourceLabel(provider) {
   if (provider === "demo") return "Sample data";
-  if (provider === "linkedin_session") return "Authenticated LinkedIn";
-  if (provider === "linkedin_oidc") return "Member authorized";
-  if (provider === "consented") return "Owner supplied";
-  return "Licensed match";
+  return "Direct LinkedIn";
 }
 
 function renderProfile(payload, elapsedMs) {
@@ -280,17 +277,14 @@ async function loadCapabilities() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     const linkedin = payload.providers.find((item) => item.name === "linkedin_session");
-    const licensed = payload.providers.find((item) => item.name === "people_data_labs");
-    realProviderConfigured = Boolean(linkedin?.configured || licensed?.configured);
-    defaultProvider = linkedin?.configured ? "linkedin_session" : "people_data_labs";
+    realProviderConfigured = Boolean(linkedin?.configured);
+    defaultProvider = "linkedin_session";
     if (realProviderConfigured) {
       nodes.url.value = REAL_EXAMPLE_URL;
       setMode(
         "",
-        linkedin?.configured ? "LinkedIn acquisition connected" : "Licensed data connected",
-        linkedin?.configured
-          ? "Authenticated profile acquisition · live LinkedIn response · no contact fields"
-          : "Professional-only enrichment · confidence threshold 8/10 · no contact fields"
+        "Direct LinkedIn acquisition connected",
+        "Server-side Voyager request · no browser automation · no third-party enrichment"
       );
     } else {
       nodes.url.value = REAL_EXAMPLE_URL;
