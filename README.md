@@ -3,28 +3,23 @@
 [![CI](https://github.com/RitwijParmar/ProfileProof/actions/workflows/ci.yml/badge.svg)](https://github.com/RitwijParmar/ProfileProof/actions/workflows/ci.yml)
 
 ProfileProof turns a LinkedIn profile URL into stable, typed professional-profile
-JSON. Its production path performs a licensed People Data Labs enrichment, checks
-the returned identity and confidence, strips contact data, and reports exact
-provenance, completeness, cache state, limitations, and a request ID.
-
-This is not a page-scraping wrapper. LinkedIn's public HTML intentionally omits
-much of a signed-out profile, while copied cookies and undocumented endpoints are
-fragile security liabilities. ProfileProof uses an explicit licensed data contract
-for arbitrary-profile enrichment and retains official LinkedIn OIDC for the
-authenticated member's own lite profile.
+JSON. Its challenge-compliant path calls LinkedIn's authenticated Voyager
+`profileView` surface, normalizes the returned entities, and reports provenance,
+completeness, cache state, limitations, and a request ID. A licensed PDL provider
+remains available as a separately labeled fallback.
 
 ## Try it
 
-Open the landing page and select **Licensed real profile**, or call the API:
+Open the landing page and enter a real profile, or call the API:
 
 ```bash
 curl -sS https://profileproof-api-980932890834.us-east1.run.app/v1/profiles/resolve \
   -H 'Content-Type: application/json' \
-  -d '{"profile_url":"https://www.linkedin.com/in/seanthorne","provider":"people_data_labs"}'
+  -d '{"profile_url":"https://www.linkedin.com/in/seanthorne"}'
 ```
 
-Check `/v1/capabilities` first: `configured: true` confirms that the deployment
-has its licensed provider secret. Interactive documentation is at `/docs`, ReDoc
+Check `/v1/capabilities` first: `linkedin_session.configured: true` confirms that
+the deployment has its authenticated session secrets. Interactive documentation is at `/docs`, ReDoc
 at `/redoc`, and the machine-readable contract at `/openapi.json`.
 
 ## API
@@ -33,13 +28,13 @@ at `/redoc`, and the machine-readable contract at `/openapi.json`.
 
 ```json
 {
-  "profile_url": "https://www.linkedin.com/in/seanthorne",
-  "provider": "people_data_labs"
+  "profile_url": "https://www.linkedin.com/in/seanthorne"
 }
 ```
 
 | Provider | Purpose | Upstream behavior |
 |---|---|---|
+| `linkedin_session` (default) | Retrieve most fields visible on a LinkedIn profile page | Authenticated fixed Voyager `profileView` endpoint; session secrets required |
 | `people_data_labs` | Real professional-profile enrichment by LinkedIn URL | Fixed PDL endpoint; API key required; no user cookies |
 | `linkedin_oidc` | Authenticated member's official lite profile | Fixed LinkedIn `/v2/userinfo` endpoint; bearer token required |
 | `consented` | Normalize owner- or caller-supplied data | No upstream call and no persistence |
@@ -61,7 +56,8 @@ flowchart LR
   API --> Guard[streaming body limit + rate limit + URL policy]
   Guard --> Service[normalization + single-flight]
   Service --> Cache[bounded TTL cache]
-  Service --> PDL[licensed enrichment]
+  Service --> Voyager[authenticated LinkedIn profileView]
+  Service --> PDL[licensed fallback]
   Service --> OIDC[official self-profile]
   Service --> Consent[authorized input]
   Service --> Demo[synthetic fixture]
@@ -83,8 +79,9 @@ make check
 make run
 ```
 
-Then open <http://localhost:8080>. For a real lookup, set
-`PROFILEPROOF_PDL_API_KEY` through a local secret source; never commit it. See
+Then open <http://localhost:8080>. For the challenge path, set
+`PROFILEPROOF_LINKEDIN_LI_AT` and `PROFILEPROOF_LINKEDIN_JSESSIONID` through a
+local secret source; never commit them. See
 `.env.example` for confidence, quota, timeout, cache, and rate-limit controls.
 
 ```bash
@@ -95,14 +92,14 @@ docker run --rm -p 8080:8080 profileproof:local
 ## Security and privacy
 
 - accepts only canonical `https://(www.)linkedin.com/in/<identifier>` URLs;
-- never requests the caller-supplied URL, preventing URL-driven SSRF;
+- derives only a URL-encoded public identifier from the caller URL;
 - calls only fixed, TLS-only provider endpoints with redirects disabled;
 - requests only professional fields and excludes emails, phone numbers, street
   addresses, social handles, and other contact data;
 - rejects low-confidence or mismatched identities instead of returning a guess;
 - bounds streamed request bodies, cache entries, rate-limit identities, provider
   calls, model collections, and Cloud Run scaling;
-- keeps provider keys in Secret Manager and never returns them from capabilities;
+- keeps session cookies and provider keys in Secret Manager and never returns them;
 - stores no profiles in a database; the one-hour in-memory cache is ephemeral;
 - returns mandatory provenance and warnings so licensed, official, consented, and
   synthetic data cannot be silently confused.
@@ -112,15 +109,14 @@ Cloud Run instance for predictable provider-credit exposure. A larger deployment
 should move quota and cache coordination to shared infrastructure and put API
 Gateway or Cloud Armor in front. See [the threat model](docs/threat-model.md).
 
-## Why licensed enrichment
+## Challenge approach
 
-LinkedIn documents that most API permissions require approval and that
-self-service OIDC exposes only the authenticated member's lite profile. Its User
-Agreement and robots policy prohibit unauthorized automated scraping and copied
-credentials. People Data Labs documents enrichment by profile URL, match
-likelihood, field selection, and API-key authentication. The resulting design is
-a real-data system with an explicit source contract—not a brittle browser-session
-automation presented as production infrastructure.
+Official self-service OIDC exposes only the authenticated member's lite profile,
+which cannot satisfy the requested experience, education, skills, certifications,
+languages, and image fields. The default provider therefore reproduces the
+authenticated profile-page request to LinkedIn's normalized Voyager response and
+maps the returned entity types into the public schema. Session values are runtime
+secrets, never source-controlled, logged, or returned.
 
 Primary references:
 
@@ -134,7 +130,11 @@ Primary references:
 
 ## Limitations
 
-- Data completeness and freshness depend on the licensed dataset and subscription.
+- The default provider depends on an undocumented LinkedIn response and can break
+  when LinkedIn changes it or expires/challenges the configured session.
+- Data visibility is limited to fields visible to the configured account.
+- Operators must ensure their use complies with applicable platform terms.
+- PDL completeness and freshness depend on its dataset and subscription.
 - Certifications and some other fields can require higher PDL field bundles.
 - LinkedIn OIDC is a self-profile path and does not provide full career history.
 - PDL does not supply a dependable profile-image field in this integration.

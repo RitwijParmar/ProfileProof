@@ -6,9 +6,10 @@
   Manager enabled;
 - `gcloud` authenticated as a deployer;
 - dedicated runtime service account;
-- People Data Labs API key stored as a secret, never in source or command history.
+- LinkedIn `li_at` and `JSESSIONID` session values stored as separate secrets,
+  never in source or command history.
 
-## Configure the licensed-provider secret
+## Configure authenticated LinkedIn secrets
 
 ```bash
 PROJECT_ID="your-project-id"
@@ -19,11 +20,13 @@ RUNTIME_SA="profileproof-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
 gcloud config set project "$PROJECT_ID"
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
   artifactregistry.googleapis.com secretmanager.googleapis.com
-gcloud secrets create profileproof-pdl-api-key --replication-policy=automatic
-gcloud secrets versions add profileproof-pdl-api-key --data-file=-
-gcloud secrets add-iam-policy-binding profileproof-pdl-api-key \
-  --member="serviceAccount:${RUNTIME_SA}" \
-  --role="roles/secretmanager.secretAccessor"
+for SECRET in profileproof-linkedin-li-at profileproof-linkedin-jsessionid; do
+  gcloud secrets create "$SECRET" --replication-policy=automatic
+  gcloud secrets versions add "$SECRET" --data-file=-
+  gcloud secrets add-iam-policy-binding "$SECRET" \
+    --member="serviceAccount:${RUNTIME_SA}" \
+    --role="roles/secretmanager.secretAccessor"
+done
 ```
 
 The `versions add` command reads the key from standard input. Do not put the key
@@ -44,8 +47,8 @@ gcloud run deploy "$SERVICE" \
   --max-instances=1 \
   --concurrency=20 \
   --timeout=20s \
-  --set-env-vars="PROFILEPROOF_ENVIRONMENT=production,PROFILEPROOF_CACHE_TTL_SECONDS=3600,PROFILEPROOF_PDL_MIN_LIKELIHOOD=8,PROFILEPROOF_PDL_CALLS_PER_INSTANCE_PER_DAY=50" \
-  --set-secrets="PROFILEPROOF_PDL_API_KEY=profileproof-pdl-api-key:latest" \
+  --set-env-vars="PROFILEPROOF_ENVIRONMENT=production,PROFILEPROOF_CACHE_TTL_SECONDS=3600,PROFILEPROOF_LINKEDIN_CALLS_PER_INSTANCE_PER_DAY=100" \
+  --set-secrets="PROFILEPROOF_LINKEDIN_LI_AT=profileproof-linkedin-li-at:latest,PROFILEPROOF_LINKEDIN_JSESSIONID=profileproof-linkedin-jsessionid:latest" \
   --quiet
 ```
 
@@ -63,12 +66,13 @@ curl -fsS "$SERVICE_URL/health"
 curl -fsS "$SERVICE_URL/v1/capabilities"
 curl -fsS "$SERVICE_URL/v1/profiles/resolve" \
   -H 'Content-Type: application/json' \
-  -d '{"profile_url":"https://www.linkedin.com/in/seanthorne","provider":"people_data_labs"}'
+  -d '{"profile_url":"https://www.linkedin.com/in/seanthorne"}'
 ```
 
-Verify that capabilities reports `people_data_labs` as configured, the response
-has `source.licensed: true`, its returned public identifier matches the request,
-and a repeated lookup reports `meta.cached: true`.
+Verify that capabilities reports `linkedin_session` as configured, the response
+has `source.mode: authenticated_linkedin_voyager`, its public identifier matches
+the request, multiple professional field groups are populated, and a repeated
+lookup reports `meta.cached: true`.
 
 ## Rotate and roll back
 

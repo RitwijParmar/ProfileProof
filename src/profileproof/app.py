@@ -36,6 +36,7 @@ from .providers import (
     ConsentedProvider,
     DemoProvider,
     LinkedInOidcProvider,
+    LinkedInSessionProvider,
     PeopleDataLabsProvider,
 )
 from .providers.base import ProfileProvider
@@ -256,7 +257,11 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with httpx.AsyncClient(
-            timeout=max(config.oidc_timeout_seconds, config.pdl_timeout_seconds),
+            timeout=max(
+                config.oidc_timeout_seconds,
+                config.linkedin_timeout_seconds,
+                config.pdl_timeout_seconds,
+            ),
             follow_redirects=False,
             transport=oidc_transport,
         ) as oidc_client:
@@ -266,10 +271,21 @@ def create_app(
                 config.pdl_min_likelihood,
                 config.pdl_calls_per_instance_per_day,
             )
+            linkedin_provider = LinkedInSessionProvider(
+                oidc_client,
+                config.linkedin_li_at.get_secret_value() if config.linkedin_li_at else None,
+                (
+                    config.linkedin_jsessionid.get_secret_value()
+                    if config.linkedin_jsessionid
+                    else None
+                ),
+                config.linkedin_calls_per_instance_per_day,
+            )
             providers: dict[ProviderName, ProfileProvider] = {
                 ProviderName.DEMO: DemoProvider(),
                 ProviderName.CONSENTED: ConsentedProvider(),
                 ProviderName.LINKEDIN_OIDC: LinkedInOidcProvider(oidc_client),
+                ProviderName.LINKEDIN_SESSION: linkedin_provider,
                 ProviderName.PEOPLE_DATA_LABS: pdl_provider,
             }
             app.state.service = ProfileService(
@@ -278,15 +294,16 @@ def create_app(
             )
             app.state.metrics = Metrics()
             app.state.pdl_configured = pdl_provider.configured
+            app.state.linkedin_configured = linkedin_provider.configured
             yield
 
     application = FastAPI(
         title="ProfileProof API",
         version=__version__,
-        summary="Professional profile normalization with licensed real-data enrichment",
+        summary="LinkedIn profile acquisition and structured normalization",
         description=(
-            "Normalizes real licensed, owner-consented, official self-profile, and synthetic "
-            "professional data through explicit providers with provenance."
+            "Acquires authenticated LinkedIn profile data and normalizes it into a typed "
+            "professional schema with explicit provenance and limitations."
         ),
         docs_url=None,
         redoc_url=None,
@@ -356,6 +373,12 @@ def create_app(
     async def capabilities(request: Request) -> CapabilitiesResponse:
         return CapabilitiesResponse(
             providers=[
+                ProviderCapability(
+                    name=ProviderName.LINKEDIN_SESSION,
+                    configured=bool(request.app.state.linkedin_configured),
+                    real_data=True,
+                    description="Authenticated LinkedIn profile-page acquisition.",
+                ),
                 ProviderCapability(
                     name=ProviderName.PEOPLE_DATA_LABS,
                     configured=bool(request.app.state.pdl_configured),

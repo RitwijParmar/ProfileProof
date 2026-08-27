@@ -2,8 +2,8 @@
 
 ## Assets and trust boundaries
 
-Assets include licensed provider credits and API key, professional-profile data,
-optional LinkedIn OIDC bearer tokens, service availability, Cloud Run identity,
+Assets include LinkedIn session secrets, licensed provider credits and API key,
+professional-profile data, optional OIDC tokens, service availability, Cloud Run identity,
 and the integrity of provenance. Trust boundaries are public internet to Cloud
 Run, Cloud Run to the container, the container to fixed PDL/LinkedIn endpoints,
 Secret Manager to the runtime identity, and CI to the container image.
@@ -17,7 +17,7 @@ Secret Manager to the runtime identity, and CI to the container image.
 | Incorrect identity match | PDL likelihood threshold defaults to 8/10; returned LinkedIn identifier must equal the requested identifier | Upstream source records can still be stale or wrong |
 | Excessive personal-data collection | `data_include` requests named professional subfields only; API omits contact, email, phone, address, and unrelated social fields | Requested summaries may contain free-form personal information |
 | Secret or token leakage | PDL key from Secret Manager; no key in capabilities/logs; OIDC token is neither logged nor cached; API keys stored as digests | Platform configuration and privileged operators remain trusted |
-| Credential/session compromise | No passwords, copied browser cookies, login automation, or undocumented LinkedIn endpoints | Licensed-provider account compromise remains possible and requires key rotation |
+| Credential/session compromise | Session values live only in Secret Manager, are never logged/returned, and have a bounded call quota | The challenge path uses an undocumented authenticated endpoint; compromise or account restriction remains possible and requires immediate rotation |
 | Resource exhaustion | Streaming 64 KiB request limit, bounded models/cache/rate-limit identities, provider timeout, Cloud Run concurrency and scale caps | Slow upstream responses consume slots until timeout |
 | Cache privacy | Licensed records cached only in process memory for one hour; no database or disk persistence | Instance-memory inspection by a privileged operator is out of scope |
 | Fabricated provenance | Provider, mode, license/consent flags, confidence, dataset version, limitations, and warnings are typed response fields | A future provider implementation must preserve the invariant |
@@ -26,7 +26,7 @@ Secret Manager to the runtime identity, and CI to the container image.
 
 ## Non-goals
 
-The service does not evade access controls, automate sign-in, solve challenges,
-reuse browser sessions, crawl search results, guarantee dataset correctness, or
-perform identity verification. It is a typed licensed-enrichment boundary with
-explicit uncertainty and provenance.
+The service does not automate sign-in, solve challenges, crawl search results,
+guarantee upstream correctness, or perform identity verification. It uses a
+configured authenticated session only for profile URLs supplied by callers and
+reports that acquisition mode explicitly.

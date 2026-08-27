@@ -20,8 +20,8 @@ const nodes = Object.fromEntries(
   ].map((id) => [id, document.getElementById(id)])
 );
 
-let licensedConfigured = false;
-let defaultProvider = "demo";
+let realProviderConfigured = false;
+let defaultProvider = "linkedin_session";
 let lastRequest = null;
 let lastPayload = null;
 
@@ -216,10 +216,10 @@ async function resolveProfile({sample = false} = {}) {
     nodes.url.focus();
     return;
   }
-  if (!licensedConfigured && provider === "demo" && requestedUrl !== SAMPLE_URL) {
+  if (!realProviderConfigured && provider !== "demo") {
     showError(
       "Live enrichment is not connected yet",
-      "This deployment is healthy, but its licensed data key is not configured. Open the complete sample profile to explore the product flow."
+      "This deployment is healthy, but its authenticated acquisition secret is not configured. The sample remains available only as a secondary schema preview."
     );
     return;
   }
@@ -271,16 +271,27 @@ async function loadCapabilities() {
     const response = await fetch("/v1/capabilities", {headers: {accept: "application/json"}});
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
+    const linkedin = payload.providers.find((item) => item.name === "linkedin_session");
     const licensed = payload.providers.find((item) => item.name === "people_data_labs");
-    licensedConfigured = Boolean(licensed?.configured);
-    defaultProvider = licensedConfigured ? "people_data_labs" : "demo";
-    if (licensedConfigured) {
+    realProviderConfigured = Boolean(linkedin?.configured || licensed?.configured);
+    defaultProvider = linkedin?.configured ? "linkedin_session" : "people_data_labs";
+    if (realProviderConfigured) {
       nodes.url.value = REAL_EXAMPLE_URL;
-      setMode("", "Licensed data connected", "Professional-only enrichment · confidence threshold 8/10 · no contact fields");
+      setMode(
+        "",
+        linkedin?.configured ? "LinkedIn acquisition connected" : "Licensed data connected",
+        linkedin?.configured
+          ? "Authenticated profile acquisition · live LinkedIn response · no contact fields"
+          : "Professional-only enrichment · confidence threshold 8/10 · no contact fields"
+      );
     } else {
-      nodes.url.value = SAMPLE_URL;
-      setMode("sample", "Sample preview", "Live API is healthy · previewing the complete product flow with clearly labeled sample data");
-      await resolveProfile({sample: true});
+      nodes.url.value = REAL_EXAMPLE_URL;
+      setMode(
+        "error",
+        "Real acquisition not connected",
+        "A real profile provider is required for challenge compliance · sample data is secondary only"
+      );
+      setView("empty");
     }
   } catch (_error) {
     setMode("error", "Source check unavailable", "The API is online, but its capability endpoint could not be read.");

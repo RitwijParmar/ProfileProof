@@ -8,6 +8,7 @@ class ProviderName(StrEnum):
     DEMO = "demo"
     CONSENTED = "consented"
     LINKEDIN_OIDC = "linkedin_oidc"
+    LINKEDIN_SESSION = "linkedin_session"
     PEOPLE_DATA_LABS = "people_data_labs"
 
 
@@ -90,7 +91,7 @@ class ProfileData(BaseModel):
 class ResolveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     profile_url: str = Field(min_length=1, max_length=500)
-    provider: ProviderName = ProviderName.DEMO
+    provider: ProviderName = ProviderName.LINKEDIN_SESSION
     consented_profile: ProfileData | None = None
 
     @model_validator(mode="after")

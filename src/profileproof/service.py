@@ -83,6 +83,7 @@ class ProfileService:
         provider = self._providers[request.provider]
         cacheable = request.provider in {
             ProviderName.DEMO,
+            ProviderName.LINKEDIN_SESSION,
             ProviderName.PEOPLE_DATA_LABS,
         }
         cache_key = hashlib.sha256(f"{request.provider}:{canonical.url}".encode()).hexdigest()
