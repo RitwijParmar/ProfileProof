@@ -4,7 +4,7 @@
 
 ProfileProof turns a LinkedIn profile URL into stable, typed professional-profile
 JSON. Its challenge-compliant path calls LinkedIn's authenticated Voyager
-`profileView` surface, normalizes the returned entities, and reports provenance,
+`identity/dash/profiles` surface, walks the normalized entity graph, and reports provenance,
 completeness, cache state, limitations, and a request ID. A licensed PDL provider
 remains available as a separately labeled fallback.
 
@@ -34,7 +34,7 @@ at `/redoc`, and the machine-readable contract at `/openapi.json`.
 
 | Provider | Purpose | Upstream behavior |
 |---|---|---|
-| `linkedin_session` (default) | Retrieve most fields visible on a LinkedIn profile page | Authenticated fixed Voyager `profileView` endpoint; session secrets required |
+| `linkedin_session` (default) | Retrieve most fields visible on a LinkedIn profile page | Authenticated Voyager full-profile endpoint; session secrets required |
 | `people_data_labs` | Real professional-profile enrichment by LinkedIn URL | Fixed PDL endpoint; API key required; no user cookies |
 | `linkedin_oidc` | Authenticated member's official lite profile | Fixed LinkedIn `/v2/userinfo` endpoint; bearer token required |
 | `consented` | Normalize owner- or caller-supplied data | No upstream call and no persistence |
@@ -56,7 +56,7 @@ flowchart LR
   API --> Guard[streaming body limit + rate limit + URL policy]
   Guard --> Service[normalization + single-flight]
   Service --> Cache[bounded TTL cache]
-  Service --> Voyager[authenticated LinkedIn profileView]
+  Service --> Voyager[authenticated LinkedIn full profile]
   Service --> PDL[licensed fallback]
   Service --> OIDC[official self-profile]
   Service --> Consent[authorized input]
