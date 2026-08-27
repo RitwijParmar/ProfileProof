@@ -21,7 +21,7 @@ const nodes = Object.fromEntries(
 );
 
 let realProviderConfigured = false;
-let defaultProvider = "linkedin_session";
+let defaultProvider = "linkedin_direct";
 let lastRequest = null;
 let lastPayload = null;
 
@@ -84,7 +84,7 @@ function renderTimeline(container, items, type) {
     const subtitle = type === "experience"
       ? [item.company, item.location].filter(Boolean).join(" · ")
       : [item.degree, item.field_of_study].filter(Boolean).join(" · ");
-    copy.append(create("h3", "timeline-title", title || "Untitled record"));
+    copy.append(create("h3", "timeline-title", title || "Role not publicly shown"));
     if (subtitle) copy.append(create("p", "timeline-subtitle", subtitle));
     copy.append(create("p", "timeline-meta", formatRange(item.dates)));
     if (item.description) copy.append(create("p", "timeline-description", item.description));
@@ -276,15 +276,15 @@ async function loadCapabilities() {
     const response = await fetch("/v1/capabilities", {headers: {accept: "application/json"}});
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
-    const linkedin = payload.providers.find((item) => item.name === "linkedin_session");
+    const linkedin = payload.providers.find((item) => item.name === "linkedin_direct");
     realProviderConfigured = Boolean(linkedin?.configured);
-    defaultProvider = "linkedin_session";
+    defaultProvider = "linkedin_direct";
     if (realProviderConfigured) {
       nodes.url.value = REAL_EXAMPLE_URL;
       setMode(
         "",
-        "Direct LinkedIn acquisition connected",
-        "Server-side Voyager request · no browser automation · no third-party enrichment"
+        "Direct LinkedIn acquisition available",
+        "Authenticated Voyager with public structured fallback · no browser automation · no third-party enrichment"
       );
     } else {
       nodes.url.value = REAL_EXAMPLE_URL;

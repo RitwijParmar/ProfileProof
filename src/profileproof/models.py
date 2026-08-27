@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, mod
 
 class ProviderName(StrEnum):
     DEMO = "demo"
-    LINKEDIN_SESSION = "linkedin_session"
+    LINKEDIN_DIRECT = "linkedin_direct"
 
 
 class DateRange(BaseModel):
@@ -26,7 +26,7 @@ class DateRange(BaseModel):
 
 class Experience(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    title: str = Field(min_length=1, max_length=200)
+    title: str | None = Field(default=None, max_length=200)
     company: str = Field(min_length=1, max_length=200)
     location: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=10_000)
@@ -88,7 +88,7 @@ class ProfileData(BaseModel):
 class ResolveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     profile_url: str = Field(min_length=1, max_length=500)
-    provider: ProviderName = ProviderName.LINKEDIN_SESSION
+    provider: ProviderName = ProviderName.LINKEDIN_DIRECT
 
 
 class SourceInfo(BaseModel):

@@ -272,14 +272,14 @@ def create_app(
             )
             providers: dict[ProviderName, ProfileProvider] = {
                 ProviderName.DEMO: DemoProvider(),
-                ProviderName.LINKEDIN_SESSION: linkedin_provider,
+                ProviderName.LINKEDIN_DIRECT: linkedin_provider,
             }
             app.state.service = ProfileService(
                 providers=providers,
                 cache=TtlCache(config.cache_ttl_seconds),
             )
             app.state.metrics = Metrics()
-            app.state.linkedin_configured = linkedin_provider.configured
+            app.state.linkedin_authenticated = linkedin_provider.authenticated
             yield
 
     application = FastAPI(
@@ -359,10 +359,13 @@ def create_app(
         return CapabilitiesResponse(
             providers=[
                 ProviderCapability(
-                    name=ProviderName.LINKEDIN_SESSION,
-                    configured=bool(request.app.state.linkedin_configured),
+                    name=ProviderName.LINKEDIN_DIRECT,
+                    configured=True,
                     real_data=True,
-                    description="Authenticated LinkedIn profile-page acquisition.",
+                    description=(
+                        "Direct LinkedIn acquisition with authenticated Voyager when configured "
+                        "and a public structured-profile fallback."
+                    ),
                 ),
                 ProviderCapability(
                     name=ProviderName.DEMO,

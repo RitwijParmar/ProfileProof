@@ -52,8 +52,8 @@ async def test_capabilities_do_not_expose_secrets(client: httpx.AsyncClient) -> 
     response = await client.get("/v1/capabilities")
     assert response.status_code == 200
     providers = {item["name"]: item for item in response.json()["providers"]}
-    assert set(providers) == {"linkedin_session", "demo"}
-    assert providers["linkedin_session"]["real_data"] is True
+    assert set(providers) == {"linkedin_direct", "demo"}
+    assert providers["linkedin_direct"]["real_data"] is True
     assert "secret" not in response.text.casefold()
 
 

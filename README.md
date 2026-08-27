@@ -19,8 +19,8 @@ curl -sS https://profileproof-api-980932890834.us-east1.run.app/v1/profiles/reso
   -d '{"profile_url":"https://www.linkedin.com/in/seanthorne"}'
 ```
 
-Check `/v1/capabilities` first: `linkedin_session.configured: true` confirms that
-the deployment has its authenticated session secrets. Interactive documentation is at `/docs`, ReDoc
+Check `/v1/capabilities` first: `linkedin_direct.configured: true` confirms that
+direct acquisition is available. Interactive documentation is at `/docs`, ReDoc
 at `/redoc`, and the machine-readable contract at `/openapi.json`.
 
 ## API
@@ -35,7 +35,7 @@ at `/redoc`, and the machine-readable contract at `/openapi.json`.
 
 | Provider | Purpose | Upstream behavior |
 |---|---|---|
-| `linkedin_session` (default) | Retrieve most fields visible on a LinkedIn profile page | Authenticated Voyager full-profile endpoint; session secrets required |
+| `linkedin_direct` (default) | Retrieve real LinkedIn profile data | Authenticated Voyager full-profile endpoint when session secrets are available; direct public structured-profile fallback otherwise |
 | `demo` | Deterministic integration fixture | No upstream call; synthetic and visibly labeled |
 
 The schema covers name, headline, location, about, experience, education, skills,
@@ -109,9 +109,11 @@ Gateway or Cloud Armor in front. See [the threat model](docs/threat-model.md).
 
 The default provider reproduces the authenticated server-side request made to
 LinkedIn's normalized Voyager full-profile endpoint and maps its URN-linked entity
-graph into the public schema. It sends HTTPS directly from the API service to a
-fixed LinkedIn endpoint. It never launches or controls a browser. Session values
-are runtime secrets, never source-controlled, logged, or returned.
+graph into the public schema. If the session is absent or rejected, it directly
+requests LinkedIn's server-rendered public profile and parses the embedded Person
+JSON-LD with explicit partial-data provenance. Both paths send HTTPS directly from
+the API service to fixed LinkedIn endpoints and never launch or control a browser.
+Session values are runtime secrets, never source-controlled, logged, or returned.
 
 Primary references:
 
@@ -126,6 +128,8 @@ Primary references:
 - The default provider depends on an undocumented LinkedIn response and can break
   when LinkedIn changes it or expires/challenges the configured session.
 - Data visibility is limited to fields visible to the configured account.
+- The public fallback can be redacted, rate-limited, or omit skills,
+  certifications, languages, and experience details.
 - Operators must ensure their use complies with applicable platform terms.
 - The demo remains synthetic by design; it is a test fixture, not the main product.
 - Cloud Run may cold-start when scaling from zero.

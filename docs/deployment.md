@@ -69,10 +69,12 @@ curl -fsS "$SERVICE_URL/v1/profiles/resolve" \
   -d '{"profile_url":"https://www.linkedin.com/in/seanthorne"}'
 ```
 
-Verify that capabilities reports `linkedin_session` as configured, the response
-has `source.mode: authenticated_linkedin_voyager`, its public identifier matches
-the request, multiple professional field groups are populated, and a repeated
-lookup reports `meta.cached: true`.
+Verify that capabilities reports `linkedin_direct` as configured and that the
+returned public identifier matches the request. With valid session secrets, require
+`source.mode: authenticated_linkedin_voyager` and multiple populated professional
+field groups. Without them, the service uses `source.mode: public_linkedin_jsonld`
+and reports LinkedIn's omissions explicitly. A repeated lookup must report
+`meta.cached: true`.
 
 ## Rotate and roll back
 

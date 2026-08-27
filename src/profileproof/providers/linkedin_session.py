@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 import time
+from contextlib import suppress
 from datetime import date
+from html import unescape
+from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import quote
 
@@ -10,6 +15,7 @@ import httpx
 from pydantic import HttpUrl, ValidationError
 
 from profileproof.errors import (
+    InvalidProfileUrl,
     ProfileNotFound,
     ProviderRejected,
     ProviderUnavailable,
@@ -26,7 +32,7 @@ from profileproof.models import (
     ProviderName,
 )
 from profileproof.rate_limit import SlidingWindowLimiter
-from profileproof.url_policy import CanonicalProfileUrl
+from profileproof.url_policy import CanonicalProfileUrl, canonicalize_linkedin_profile_url
 
 from .base import ProviderContext, ProviderResult
 
@@ -43,6 +49,13 @@ def _text(value: object) -> str | None:
     return text.strip() if isinstance(text, str) and text.strip() else None
 
 
+def _public_text(value: object) -> str | None:
+    text = _text(value)
+    if text is None or all(character in {"*", " ", "\t", "\r", "\n"} for character in text):
+        return None
+    return text
+
+
 def _date(value: object) -> date | None:
     item = _mapping(value)
     year = item.get("year")
@@ -56,6 +69,163 @@ def _date(value: object) -> date | None:
         return date(year, month, day)
     except ValueError:
         return None
+
+
+def _public_date(value: object) -> date | None:
+    if isinstance(value, int):
+        try:
+            return date(value, 1, 1)
+        except ValueError:
+            return None
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(r"(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?", value.strip())
+    if match is None:
+        return None
+    try:
+        return date(int(match.group(1)), int(match.group(2) or 1), int(match.group(3) or 1))
+    except ValueError:
+        return None
+
+
+def _public_period(value: object) -> DateRange:
+    item = _mapping(value)
+    start = _public_date(item.get("startDate"))
+    end = _public_date(item.get("endDate"))
+    return DateRange(start=start, end=end, is_current=start is not None and end is None)
+
+
+class _JsonLdParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self._capturing = False
+        self._parts: list[str] = []
+        self.blocks: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = {name.casefold(): value for name, value in attrs}
+        if tag.casefold() == "script" and (attributes.get("type") or "").casefold() == (
+            "application/ld+json"
+        ):
+            self._capturing = True
+            self._parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._capturing:
+            self._parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() == "script" and self._capturing:
+            self.blocks.append("".join(self._parts))
+            self._capturing = False
+            self._parts = []
+
+
+def _public_person(document: str) -> dict[str, Any]:
+    parser = _JsonLdParser()
+    parser.feed(document)
+    for block in parser.blocks:
+        try:
+            value = json.loads(unescape(block))
+        except (TypeError, ValueError):
+            continue
+        roots = value if isinstance(value, list) else [value]
+        for root in roots:
+            item = _mapping(root)
+            graph = item.get("@graph")
+            candidates = graph if isinstance(graph, list) else [item]
+            for candidate in candidates:
+                person = _mapping(candidate)
+                if person.get("@type") == "Person":
+                    return person
+    return {}
+
+
+def _public_values(value: object) -> list[object]:
+    return value if isinstance(value, list) else ([] if value is None else [value])
+
+
+def _public_profile(person: dict[str, Any]) -> ProfileData:
+    address = _mapping(person.get("address"))
+    location = _public_text(address.get("addressLocality"))
+    country = _public_text(address.get("addressCountry"))
+    if country and location and country.casefold() not in location.casefold():
+        location = f"{location}, {country}"
+    elif location is None:
+        location = country
+
+    titles = [
+        title
+        for value in _public_values(person.get("jobTitle"))
+        if (title := _public_text(value)) is not None
+    ]
+    experience: list[Experience] = []
+    for index, value in enumerate(_public_values(person.get("worksFor"))):
+        organization = _mapping(value)
+        role = _mapping(organization.get("member"))
+        company = _public_text(organization.get("name"))
+        title = (
+            _public_text(role.get("roleName"))
+            or _public_text(role.get("jobTitle"))
+            or (titles[index] if index < len(titles) else None)
+        )
+        if company:
+            experience.append(
+                Experience(
+                    title=title,
+                    company=company,
+                    location=_public_text(organization.get("location")),
+                    description=_public_text(role.get("description")),
+                    dates=_public_period(role),
+                )
+            )
+
+    education: list[Education] = []
+    for value in _public_values(person.get("alumniOf")):
+        organization = _mapping(value)
+        membership = _mapping(organization.get("member"))
+        school = _public_text(organization.get("name"))
+        if school:
+            education.append(
+                Education(
+                    school=school,
+                    degree=_public_text(membership.get("roleName")),
+                    description=_public_text(membership.get("description")),
+                    dates=_public_period(membership),
+                )
+            )
+
+    languages = [
+        Language(name=name)
+        for value in _public_values(person.get("knowsLanguage"))
+        if (name := _public_text(_mapping(value).get("name") if isinstance(value, dict) else value))
+        is not None
+    ]
+    skills = [
+        skill
+        for value in _public_values(person.get("knowsAbout") or person.get("skills"))
+        if (
+            skill := _public_text(_mapping(value).get("name") if isinstance(value, dict) else value)
+        )
+        is not None
+    ]
+    image = _mapping(person.get("image"))
+    profile_image: HttpUrl | None = None
+    image_url = _public_text(image.get("contentUrl") or person.get("image"))
+    if image_url:
+        with suppress(ValidationError):
+            profile_image = HttpUrl(image_url)
+    return ProfileData(
+        name=_public_text(person.get("name")),
+        headline=" · ".join(titles) or None,
+        location=location,
+        about=_public_text(person.get("disambiguatingDescription")),
+        experience=experience,
+        education=education,
+        skills=skills,
+        languages=languages,
+        images=ProfileImages(profile=profile_image),
+    )
 
 
 def _period(value: object) -> DateRange:
@@ -220,8 +390,9 @@ def _certifications(payload: dict[str, Any], profile: dict[str, Any]) -> list[Ce
 
 
 class LinkedInSessionProvider:
-    name = ProviderName.LINKEDIN_SESSION
+    name = ProviderName.LINKEDIN_DIRECT
     endpoint = "https://www.linkedin.com/voyager/api/identity/dash/profiles"
+    public_endpoint = "https://www.linkedin.com/in/{public_identifier}"
 
     def __init__(
         self,
@@ -243,50 +414,63 @@ class LinkedInSessionProvider:
 
     @property
     def configured(self) -> bool:
+        return True
+
+    @property
+    def authenticated(self) -> bool:
         return bool(self._li_at and self._jsessionid)
+
+    async def _get(self, url: str, **kwargs: Any) -> httpx.Response:
+        async with self._request_lock:
+            delay = self._last_request_started + self._min_interval_seconds - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            self._last_request_started = time.monotonic()
+            return await self._client.get(url, **kwargs)
 
     async def fetch(
         self, profile_url: CanonicalProfileUrl, context: ProviderContext
     ) -> ProviderResult:
         del context
-        if not self.configured:
-            raise ProviderUnavailable("The authenticated LinkedIn provider is not configured.")
         allowed, _, retry_after = await self._quota.allow("linkedin-session")
         if not allowed:
             raise RateLimitExceeded(
                 f"The LinkedIn daily safety quota is exhausted; retry in {retry_after}s."
             )
+        if not self.authenticated:
+            return await self._fetch_public(profile_url)
+        try:
+            return await self._fetch_authenticated(profile_url)
+        except (ProfileNotFound, ProviderUnavailable):
+            return await self._fetch_public(profile_url)
+
+    async def _fetch_authenticated(self, profile_url: CanonicalProfileUrl) -> ProviderResult:
         csrf = str(self._jsessionid).strip('"')
         try:
-            async with self._request_lock:
-                delay = self._last_request_started + self._min_interval_seconds - time.monotonic()
-                if delay > 0:
-                    await asyncio.sleep(delay)
-                self._last_request_started = time.monotonic()
-                response = await self._client.get(
-                    self.endpoint,
-                    params={
-                        "q": "memberIdentity",
-                        "memberIdentity": quote(profile_url.public_identifier, safe=""),
-                        "decorationId": (
-                            "com.linkedin.voyager.dash.deco.identity.profile."
-                            "FullProfileWithEntities-101"
-                        ),
-                    },
-                    headers={
-                        "Accept": "application/vnd.linkedin.normalized+json+2.1",
-                        "Accept-Language": "en-US,en;q=0.9",
-                        "csrf-token": csrf,
-                        "Referer": (
-                            "https://www.linkedin.com/in/"
-                            f"{quote(profile_url.public_identifier, safe='')}/"
-                        ),
-                        "User-Agent": self._user_agent,
-                        "x-li-lang": "en_US",
-                        "x-restli-protocol-version": "2.0.0",
-                        "Cookie": f'li_at={self._li_at}; JSESSIONID="{csrf}"',
-                    },
-                )
+            response = await self._get(
+                self.endpoint,
+                params={
+                    "q": "memberIdentity",
+                    "memberIdentity": quote(profile_url.public_identifier, safe=""),
+                    "decorationId": (
+                        "com.linkedin.voyager.dash.deco.identity.profile."
+                        "FullProfileWithEntities-101"
+                    ),
+                },
+                headers={
+                    "Accept": "application/vnd.linkedin.normalized+json+2.1",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "csrf-token": csrf,
+                    "Referer": (
+                        "https://www.linkedin.com/in/"
+                        f"{quote(profile_url.public_identifier, safe='')}/"
+                    ),
+                    "User-Agent": self._user_agent,
+                    "x-li-lang": "en_US",
+                    "x-restli-protocol-version": "2.0.0",
+                    "Cookie": f'li_at={self._li_at}; JSESSIONID="{csrf}"',
+                },
+            )
         except httpx.HTTPError as error:
             raise ProviderRejected("LinkedIn could not be reached.") from error
         if response.status_code == 404:
@@ -349,4 +533,55 @@ class LinkedInSessionProvider:
                 "LinkedIn may change this undocumented response without notice.",
             ],
             warnings=["authenticated_session", "undocumented_upstream"],
+        )
+
+    async def _fetch_public(self, profile_url: CanonicalProfileUrl) -> ProviderResult:
+        endpoint = self.public_endpoint.format(
+            public_identifier=quote(profile_url.public_identifier, safe="")
+        )
+        try:
+            response = await self._get(
+                endpoint,
+                headers={
+                    "Accept": "text/html,application/xhtml+xml",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "User-Agent": self._user_agent,
+                },
+            )
+        except httpx.HTTPError as error:
+            raise ProviderRejected("LinkedIn could not be reached.") from error
+        if response.status_code == 404:
+            raise ProfileNotFound("LinkedIn did not return that profile.")
+        if response.status_code in {302, 401, 403}:
+            raise ProviderUnavailable("LinkedIn did not expose a public profile response.")
+        if response.status_code in {429, 999}:
+            raise RateLimitExceeded("LinkedIn rate-limited this deployment.")
+        if response.status_code != 200:
+            raise ProviderRejected(f"LinkedIn returned HTTP {response.status_code}.")
+        if len(response.content) > 2_000_000:
+            raise ProviderRejected("LinkedIn returned an unexpectedly large profile response.")
+        person = _public_person(response.text)
+        if not person:
+            raise ProfileNotFound("LinkedIn did not expose structured public profile data.")
+        identity = _public_text(person.get("url")) or _public_text(person.get("sameAs"))
+        if identity:
+            try:
+                returned = canonicalize_linkedin_profile_url(identity)
+            except InvalidProfileUrl:
+                raise ProviderRejected("LinkedIn returned an invalid profile identity.") from None
+            if returned.public_identifier.casefold() != profile_url.public_identifier.casefold():
+                raise ProviderRejected("LinkedIn returned a different profile identity.")
+        profile = _public_profile(person)
+        if profile.name is None:
+            raise ProfileNotFound("LinkedIn redacted the public profile identity.")
+        return ProviderResult(
+            profile=profile,
+            mode="public_linkedin_jsonld",
+            consented=False,
+            limitations=[
+                "Data is limited to fields LinkedIn exposes in its public server-rendered profile.",
+                "LinkedIn may redact or omit experience, skills, certifications, and languages.",
+                "LinkedIn may change this undocumented response without notice.",
+            ],
+            warnings=["public_profile", "partial_public_view", "undocumented_upstream"],
         )

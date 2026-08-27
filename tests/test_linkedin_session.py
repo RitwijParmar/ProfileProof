@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 
 import httpx
@@ -5,6 +6,69 @@ import pytest
 
 from profileproof.app import create_app
 from profileproof.config import Settings
+from profileproof.providers.linkedin_session import _public_date, _public_person, _public_text
+
+
+def _public_html(
+    public_identifier: str = "ritwij-aryan-parmar-716024211",
+    name: str = "Ritwij Aryan Parmar",
+) -> str:
+    payload = {
+        "@context": "https://schema.org",
+        "@graph": [
+            {
+                "@type": "Person",
+                "url": f"https://www.linkedin.com/in/{public_identifier}",
+                "name": name,
+                "jobTitle": ["Principal Software Engineer"],
+                "disambiguatingDescription": "Builds low-latency systems.",
+                "address": {
+                    "@type": "PostalAddress",
+                    "addressLocality": "New York",
+                    "addressCountry": "US",
+                },
+                "worksFor": [
+                    {
+                        "@type": "Organization",
+                        "name": "Quant Systems",
+                        "member": {
+                            "@type": "OrganizationRole",
+                            "roleName": "Principal Software Engineer",
+                            "description": "Built market infrastructure.",
+                            "startDate": "2024-06",
+                        },
+                    }
+                ],
+                "alumniOf": [
+                    {
+                        "@type": "EducationalOrganization",
+                        "name": "University at Buffalo",
+                        "member": {
+                            "@type": "OrganizationRole",
+                            "roleName": "MS Computer Science",
+                            "startDate": 2023,
+                            "endDate": 2025,
+                        },
+                    }
+                ],
+                "knowsAbout": ["Python", "Distributed Systems"],
+                "knowsLanguage": [{"name": "English"}],
+                "image": {
+                    "@type": "ImageObject",
+                    "contentUrl": "https://media.licdn.com/profile.jpg",
+                },
+            }
+        ],
+    }
+    return f'<html><script type="application/ld+json">{json.dumps(payload)}</script></html>'
+
+
+def test_public_helpers_fail_closed() -> None:
+    assert _public_date({}) is None
+    assert _public_date(10_000) is None
+    assert _public_date("2024-99") is None
+    assert _public_text("*** **") is None
+    assert _public_person('<script type="application/ld+json">not-json</script>') == {}
 
 
 def _payload(public_identifier: str = "ritwij-aryan-parmar-716024211") -> dict[str, object]:
@@ -133,6 +197,21 @@ async def _request(handler: Callable[[httpx.Request], httpx.Response]) -> httpx.
         )
 
 
+async def _public_request(handler: Callable[[httpx.Request], httpx.Response]) -> httpx.Response:
+    app = create_app(
+        Settings(environment="test", linkedin_min_interval_seconds=0),
+        upstream_transport=httpx.MockTransport(handler),
+    )
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client,
+    ):
+        return await client.post(
+            "/v1/profiles/resolve",
+            json={"profile_url": "https://www.linkedin.com/in/ritwij-aryan-parmar-716024211"},
+        )
+
+
 @pytest.mark.asyncio
 async def test_linkedin_session_maps_real_profile_contract() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
@@ -220,13 +299,77 @@ async def test_linkedin_session_serializes_and_paces_uncached_requests() -> None
 
 
 @pytest.mark.asyncio
-async def test_default_provider_requires_linkedin_session(client: httpx.AsyncClient) -> None:
-    response = await client.post(
-        "/v1/profiles/resolve",
-        json={"profile_url": "https://www.linkedin.com/in/example-user"},
+async def test_default_provider_uses_public_direct_fallback() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/in/ritwij-aryan-parmar-716024211"
+        assert "cookie" not in request.headers
+        return httpx.Response(200, text=_public_html())
+
+    app = create_app(
+        Settings(environment="test"),
+        upstream_transport=httpx.MockTransport(handler),
     )
-    assert response.status_code == 424
-    assert "authenticated LinkedIn" in response.json()["detail"]
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client,
+    ):
+        response = await client.post(
+            "/v1/profiles/resolve",
+            json={"profile_url": "https://www.linkedin.com/in/ritwij-aryan-parmar-716024211"},
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"]["provider"] == "linkedin_direct"
+    assert body["source"]["mode"] == "public_linkedin_jsonld"
+    assert body["profile"]["name"] == "Ritwij Aryan Parmar"
+    assert body["profile"]["experience"][0]["company"] == "Quant Systems"
+    assert body["profile"]["education"][0]["school"] == "University at Buffalo"
+    assert body["profile"]["skills"] == ["Python", "Distributed Systems"]
+    assert body["profile"]["languages"] == [{"name": "English"}]
+
+
+@pytest.mark.asyncio
+async def test_rejected_session_falls_back_to_public_profile() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/voyager/api/"):
+            return httpx.Response(302, headers={"location": "/uas/login"})
+        return httpx.Response(200, text=_public_html())
+
+    response = await _request(handler)
+    assert response.status_code == 200
+    assert response.json()["source"]["mode"] == "public_linkedin_jsonld"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("upstream_status", "expected_status"),
+    [(404, 404), (302, 424), (401, 424), (403, 424), (429, 429), (999, 429), (500, 502)],
+)
+async def test_public_direct_maps_failures(upstream_status: int, expected_status: int) -> None:
+    response = await _public_request(lambda _request: httpx.Response(upstream_status))
+    assert response.status_code == expected_status
+
+
+@pytest.mark.asyncio
+async def test_public_direct_rejects_unusable_documents() -> None:
+    missing = await _public_request(lambda _request: httpx.Response(200, text="<html></html>"))
+    oversized = await _public_request(lambda _request: httpx.Response(200, text="x" * 2_000_001))
+    mismatch = await _public_request(
+        lambda _request: httpx.Response(
+            200,
+            text=_public_html(public_identifier="different-profile"),
+        )
+    )
+    redacted = await _public_request(
+        lambda _request: httpx.Response(
+            200,
+            text=_public_html(name="********"),
+        )
+    )
+    assert missing.status_code == 404
+    assert oversized.status_code == 502
+    assert mismatch.status_code == 502
+    assert redacted.status_code == 404
 
 
 @pytest.mark.asyncio
