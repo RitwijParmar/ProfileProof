@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     )
     linkedin_li_at: SecretStr | None = None
     linkedin_jsessionid: SecretStr | None = None
+    relay_pointer_url: str | None = None
     enable_demo_provider: bool = True
     api_key_sha256: str | None = None
 

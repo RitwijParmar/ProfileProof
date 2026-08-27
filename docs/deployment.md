@@ -56,6 +56,32 @@ One maximum instance makes the in-memory daily provider quota and serialized
 upstream pacing meaningful. Increase it only after moving coordination to a
 shared store or fronting the service with authenticated, centrally enforced quota.
 
+## Residential relay for blocked data-center egress
+
+LinkedIn can reject data-center addresses even when the direct HTTP implementation
+is correct. ProfileProof can keep Cloud Run as its stable public boundary while a
+residential worker performs the same browserless LinkedIn request:
+
+1. The worker opens a reverse HTTPS tunnel and writes its current origin to a
+   public Cloud Storage text object. The object contains no credentials or profile data.
+2. Cloud Run reads that pointer and accepts only `storage.googleapis.com`.
+3. It accepts only HTTPS Serveo origins, forwards the canonical LinkedIn URL, validates
+   the typed response, and verifies the returned public identifier.
+4. `scripts/serveo_tunnel.py` republishes the origin after every reconnect, so the
+   Cloud Run URL does not change.
+
+Set the pointer on a zero-traffic candidate first:
+
+```bash
+gcloud run deploy "$SERVICE" --source . --region "$REGION" --no-traffic \
+  --tag=relay-candidate \
+  --update-env-vars="PROFILEPROOF_RELAY_POINTER_URL=https://storage.googleapis.com/BUCKET/current-origin.txt"
+```
+
+The worker must run the same application without `PROFILEPROOF_RELAY_POINTER_URL`;
+otherwise it would relay back to itself. Keep its local API and tunnel supervisor
+under the operating system's service manager so both restart automatically.
+
 ## Verify
 
 ```bash
@@ -75,6 +101,10 @@ returned public identifier matches the request. With valid session secrets, requ
 field groups. Without them, the service uses `source.mode: public_linkedin_jsonld`
 and reports LinkedIn's omissions explicitly. A repeated lookup must report
 `meta.cached: true`.
+
+Promote only after the tagged candidate returns a real profile and a repeat call
+reports `meta.cached: true`. If the relay is unavailable, the API fails explicitly
+with problem details instead of returning sample data as if it were real.
 
 ## Rotate and roll back
 

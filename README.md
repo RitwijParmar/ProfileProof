@@ -54,7 +54,9 @@ flowchart LR
   API --> Guard[streaming body limit + rate limit + URL policy]
   Guard --> Service[normalization + single-flight]
   Service --> Cache[bounded TTL cache]
-  Service --> Voyager[authenticated LinkedIn full profile]
+  Service --> Relay[validated residential relay]
+  Relay --> Worker[direct LinkedIn HTTP acquisition]
+  Worker --> Voyager[authenticated Voyager or public JSON-LD]
   Service --> Demo[synthetic fixture]
   Service --> Schema[typed response + provenance]
   API --> Ops[health + readiness + metrics + request IDs]
@@ -64,6 +66,9 @@ Identical concurrent cache misses share one upstream operation, preventing a
 request burst from multiplying LinkedIn calls. Uncached upstream starts are
 serialized and paced per instance. Acquisition is isolated behind
 a provider interface, so the response contract is independent of the data source.
+The deployed service discovers the current residential worker through a public,
+non-secret Cloud Storage pointer. Both the pointer host and relay hostname suffix
+are allowlisted, and the returned identifier is checked again at the GCP boundary.
 
 ## Local development
 
@@ -90,6 +95,7 @@ docker run --rm -p 8080:8080 profileproof:local
 - accepts only canonical `https://(www.)linkedin.com/in/<identifier>` URLs;
 - derives only a URL-encoded public identifier from the caller URL;
 - calls only fixed, TLS-only provider endpoints with redirects disabled;
+- constrains relay discovery to an HTTPS Cloud Storage pointer and Serveo origins;
 - requests only professional fields and excludes emails, phone numbers, street
   addresses, social handles, and other contact data;
 - rejects low-confidence or mismatched identities instead of returning a guess;
@@ -133,6 +139,8 @@ Primary references:
 - Operators must ensure their use complies with applicable platform terms.
 - The demo remains synthetic by design; it is a test fixture, not the main product.
 - Cloud Run may cold-start when scaling from zero.
+- Residential acquisition depends on the enrolled worker being powered on and online;
+  its tunnel reconnects and republishes its current origin automatically.
 
 Deployment, verification, and rollback are documented in
 [docs/deployment.md](docs/deployment.md).

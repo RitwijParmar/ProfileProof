@@ -35,6 +35,7 @@ from .models import (
 from .providers import (
     DemoProvider,
     LinkedInSessionProvider,
+    ResidentialRelayProvider,
 )
 from .providers.base import ProfileProvider
 from .rate_limit import SlidingWindowLimiter
@@ -272,7 +273,11 @@ def create_app(
             )
             providers: dict[ProviderName, ProfileProvider] = {
                 ProviderName.DEMO: DemoProvider(),
-                ProviderName.LINKEDIN_DIRECT: linkedin_provider,
+                ProviderName.LINKEDIN_DIRECT: (
+                    ResidentialRelayProvider(upstream_client, config.relay_pointer_url)
+                    if config.relay_pointer_url
+                    else linkedin_provider
+                ),
             }
             app.state.service = ProfileService(
                 providers=providers,
@@ -280,6 +285,7 @@ def create_app(
             )
             app.state.metrics = Metrics()
             app.state.linkedin_authenticated = linkedin_provider.authenticated
+            app.state.residential_relay = bool(config.relay_pointer_url)
             yield
 
     application = FastAPI(
@@ -363,8 +369,11 @@ def create_app(
                     configured=True,
                     real_data=True,
                     description=(
-                        "Direct LinkedIn acquisition with authenticated Voyager when configured "
-                        "and a public structured-profile fallback."
+                        "Direct LinkedIn acquisition through an automatically discovered "
+                        "residential relay."
+                        if request.app.state.residential_relay
+                        else "Direct LinkedIn acquisition with authenticated Voyager when "
+                        "configured and a public structured-profile fallback."
                     ),
                 ),
                 ProviderCapability(
