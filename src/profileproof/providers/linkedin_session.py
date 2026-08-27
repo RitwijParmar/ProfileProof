@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from datetime import date
 from typing import Any
 from urllib.parse import quote
@@ -227,11 +229,17 @@ class LinkedInSessionProvider:
         li_at: str | None,
         jsessionid: str | None,
         calls_per_day: int,
+        min_interval_seconds: float,
+        user_agent: str,
     ) -> None:
         self._client = client
         self._li_at = li_at
         self._jsessionid = jsessionid
         self._quota = SlidingWindowLimiter(calls_per_day, 86_400)
+        self._min_interval_seconds = min_interval_seconds
+        self._user_agent = user_agent
+        self._request_lock = asyncio.Lock()
+        self._last_request_started = 0.0
 
     @property
     def configured(self) -> bool:
@@ -250,24 +258,35 @@ class LinkedInSessionProvider:
             )
         csrf = str(self._jsessionid).strip('"')
         try:
-            response = await self._client.get(
-                self.endpoint,
-                params={
-                    "q": "memberIdentity",
-                    "memberIdentity": quote(profile_url.public_identifier, safe=""),
-                    "decorationId": (
-                        "com.linkedin.voyager.dash.deco.identity.profile."
-                        "FullProfileWithEntities-101"
-                    ),
-                },
-                headers={
-                    "Accept": "application/vnd.linkedin.normalized+json+2.1",
-                    "csrf-token": csrf,
-                    "x-li-lang": "en_US",
-                    "x-restli-protocol-version": "2.0.0",
-                    "Cookie": f'li_at={self._li_at}; JSESSIONID="{csrf}"',
-                },
-            )
+            async with self._request_lock:
+                delay = self._last_request_started + self._min_interval_seconds - time.monotonic()
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                self._last_request_started = time.monotonic()
+                response = await self._client.get(
+                    self.endpoint,
+                    params={
+                        "q": "memberIdentity",
+                        "memberIdentity": quote(profile_url.public_identifier, safe=""),
+                        "decorationId": (
+                            "com.linkedin.voyager.dash.deco.identity.profile."
+                            "FullProfileWithEntities-101"
+                        ),
+                    },
+                    headers={
+                        "Accept": "application/vnd.linkedin.normalized+json+2.1",
+                        "Accept-Language": "en-US,en;q=0.9",
+                        "csrf-token": csrf,
+                        "Referer": (
+                            "https://www.linkedin.com/in/"
+                            f"{quote(profile_url.public_identifier, safe='')}/"
+                        ),
+                        "User-Agent": self._user_agent,
+                        "x-li-lang": "en_US",
+                        "x-restli-protocol-version": "2.0.0",
+                        "Cookie": f'li_at={self._li_at}; JSESSIONID="{csrf}"',
+                    },
+                )
         except httpx.HTTPError as error:
             raise ProviderRejected("LinkedIn could not be reached.") from error
         if response.status_code == 404:

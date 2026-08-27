@@ -47,13 +47,13 @@ gcloud run deploy "$SERVICE" \
   --max-instances=1 \
   --concurrency=20 \
   --timeout=20s \
-  --set-env-vars="PROFILEPROOF_ENVIRONMENT=production,PROFILEPROOF_CACHE_TTL_SECONDS=3600,PROFILEPROOF_LINKEDIN_CALLS_PER_INSTANCE_PER_DAY=100" \
+  --set-env-vars="PROFILEPROOF_ENVIRONMENT=production,PROFILEPROOF_CACHE_TTL_SECONDS=3600,PROFILEPROOF_LINKEDIN_CALLS_PER_INSTANCE_PER_DAY=100,PROFILEPROOF_LINKEDIN_MIN_INTERVAL_SECONDS=1" \
   --set-secrets="PROFILEPROOF_LINKEDIN_LI_AT=profileproof-linkedin-li-at:latest,PROFILEPROOF_LINKEDIN_JSESSIONID=profileproof-linkedin-jsessionid:latest" \
   --quiet
 ```
 
-One maximum instance makes the in-memory daily provider quota meaningful and
-bounds credit exposure. Increase it only after moving quota coordination to a
+One maximum instance makes the in-memory daily provider quota and serialized
+upstream pacing meaningful. Increase it only after moving coordination to a
 shared store or fronting the service with authenticated, centrally enforced quota.
 
 ## Verify

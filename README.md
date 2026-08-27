@@ -61,7 +61,8 @@ flowchart LR
 ```
 
 Identical concurrent cache misses share one upstream operation, preventing a
-request burst from multiplying billable lookups. Acquisition is isolated behind
+request burst from multiplying LinkedIn calls. Uncached upstream starts are
+serialized and paced per instance. Acquisition is isolated behind
 a provider interface, so the response contract is independent of the data source.
 
 ## Local development

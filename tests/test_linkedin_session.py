@@ -141,6 +141,9 @@ async def test_linkedin_session_maps_real_profile_contract() -> None:
         assert request.url.params["memberIdentity"] == "ritwij-aryan-parmar-716024211"
         assert request.url.params["decorationId"].endswith("FullProfileWithEntities-101")
         assert request.headers["csrf-token"] == "ajax:123"
+        assert request.headers["user-agent"].startswith("Mozilla/5.0")
+        assert request.headers["accept-language"] == "en-US,en;q=0.9"
+        assert request.headers["referer"].endswith("/in/ritwij-aryan-parmar-716024211/")
         assert "li_at=li-at-secret" in request.headers["cookie"]
         return httpx.Response(200, json=_payload())
 
@@ -184,6 +187,36 @@ async def test_linkedin_session_resolves_target_graph_without_cross_profile_rows
     assert response.status_code == 200
     assert body["profile"]["name"] == "Ritwij Aryan Parmar"
     assert [item["company"] for item in body["profile"]["experience"]] == ["Quant Systems"]
+
+
+@pytest.mark.asyncio
+async def test_linkedin_session_serializes_and_paces_uncached_requests() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_payload(request.url.params["memberIdentity"]))
+
+    app = create_app(
+        Settings(
+            environment="test",
+            linkedin_li_at="li-at-secret",
+            linkedin_jsessionid="ajax:123",
+            linkedin_min_interval_seconds=0.05,
+        ),
+        upstream_transport=httpx.MockTransport(handler),
+    )
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client,
+    ):
+        first = await client.post(
+            "/v1/profiles/resolve",
+            json={"profile_url": "https://www.linkedin.com/in/first-profile"},
+        )
+        second = await client.post(
+            "/v1/profiles/resolve",
+            json={"profile_url": "https://www.linkedin.com/in/second-profile"},
+        )
+    assert first.status_code == 200
+    assert second.status_code == 200
 
 
 @pytest.mark.asyncio

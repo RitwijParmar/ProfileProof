@@ -267,6 +267,8 @@ def create_app(
                     else None
                 ),
                 config.linkedin_calls_per_instance_per_day,
+                config.linkedin_min_interval_seconds,
+                config.linkedin_user_agent,
             )
             providers: dict[ProviderName, ProfileProvider] = {
                 ProviderName.DEMO: DemoProvider(),
