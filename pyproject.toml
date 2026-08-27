@@ -1,7 +1,7 @@
 [project]
 name = "profileproof"
-version = "1.0.0"
-description = "Consent-first professional profile normalization API"
+version = "1.1.0"
+description = "Licensed professional-profile enrichment and normalization API"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
@@ -15,7 +15,8 @@ dependencies = [
 [dependency-groups]
 dev = [
   "mypy>=1.17,<2",
-  "pytest>=8.4,<9",
+  "pip-audit>=2.9,<3",
+  "pytest>=9.0.3,<10",
   "pytest-asyncio>=1.1,<2",
   "pytest-cov>=6.2,<7",
   "respx>=0.22,<1",

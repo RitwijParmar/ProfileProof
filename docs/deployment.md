@@ -2,40 +2,56 @@
 
 ## Preconditions
 
-- an active GCP project with billing, Cloud Run, Cloud Build, and Artifact
-  Registry enabled;
+- GCP project with billing, Cloud Run, Cloud Build, Artifact Registry, and Secret
+  Manager enabled;
 - `gcloud` authenticated as a deployer;
-- a dedicated service account with no project roles for this application.
+- dedicated runtime service account;
+- People Data Labs API key stored as a secret, never in source or command history.
 
-## Deploy from source
+## Configure the licensed-provider secret
 
 ```bash
 PROJECT_ID="your-project-id"
 REGION="us-east1"
 SERVICE="profileproof-api"
+RUNTIME_SA="profileproof-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
 
 gcloud config set project "$PROJECT_ID"
-gcloud iam service-accounts create profileproof-runtime \
-  --display-name="ProfileProof Cloud Run runtime"
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com secretmanager.googleapis.com
+gcloud secrets create profileproof-pdl-api-key --replication-policy=automatic
+gcloud secrets versions add profileproof-pdl-api-key --data-file=-
+gcloud secrets add-iam-policy-binding profileproof-pdl-api-key \
+  --member="serviceAccount:${RUNTIME_SA}" \
+  --role="roles/secretmanager.secretAccessor"
+```
 
+The `versions add` command reads the key from standard input. Do not put the key
+directly in the command or an environment file.
+
+## Deploy from source
+
+```bash
 gcloud run deploy "$SERVICE" \
   --source . \
   --region "$REGION" \
-  --service-account="profileproof-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --service-account="$RUNTIME_SA" \
   --allow-unauthenticated \
   --port=8080 \
   --cpu=1 \
   --memory=512Mi \
   --min-instances=0 \
-  --max-instances=3 \
-  --concurrency=40 \
-  --set-env-vars="PROFILEPROOF_ENVIRONMENT=production" \
+  --max-instances=1 \
+  --concurrency=20 \
+  --timeout=20s \
+  --set-env-vars="PROFILEPROOF_ENVIRONMENT=production,PROFILEPROOF_CACHE_TTL_SECONDS=3600,PROFILEPROOF_PDL_MIN_LIKELIHOOD=8,PROFILEPROOF_PDL_CALLS_PER_INSTANCE_PER_DAY=50" \
+  --set-secrets="PROFILEPROOF_PDL_API_KEY=profileproof-pdl-api-key:latest" \
   --quiet
 ```
 
-No LinkedIn secret is needed for the demo or consented providers. If optional
-API-key protection is enabled, store its digest in Secret Manager and mount a
-pinned secret version as `PROFILEPROOF_API_KEY_SHA256`.
+One maximum instance makes the in-memory daily provider quota meaningful and
+bounds credit exposure. Increase it only after moving quota coordination to a
+shared store or fronting the service with authenticated, centrally enforced quota.
 
 ## Verify
 
@@ -44,17 +60,20 @@ SERVICE_URL="$(gcloud run services describe "$SERVICE" \
   --region "$REGION" --format='value(status.url)')"
 
 curl -fsS "$SERVICE_URL/health"
+curl -fsS "$SERVICE_URL/v1/capabilities"
 curl -fsS "$SERVICE_URL/v1/profiles/resolve" \
   -H 'Content-Type: application/json' \
-  -d '{"profile_url":"https://www.linkedin.com/in/profileproof-demo","provider":"demo"}'
+  -d '{"profile_url":"https://www.linkedin.com/in/seanthorne","provider":"people_data_labs"}'
 ```
 
-Confirm the deployed revision, service identity, traffic allocation, ingress,
-and environment configuration with `gcloud run services describe`.
+Verify that capabilities reports `people_data_labs` as configured, the response
+has `source.licensed: true`, its returned public identifier matches the request,
+and a repeated lookup reports `meta.cached: true`.
 
-## Rollback
+## Rotate and roll back
 
-List revisions, then direct all traffic to the last known-good revision:
+Add a new secret version, deploy or restart the revision, verify, then disable the
+old version. For application rollback:
 
 ```bash
 gcloud run revisions list --service "$SERVICE" --region "$REGION"
