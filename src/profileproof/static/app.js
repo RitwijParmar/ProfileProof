@@ -122,6 +122,14 @@ function confidenceLabel(value) {
   return "Review recommended";
 }
 
+function sourceLabel(provider) {
+  if (provider === "demo") return "Sample data";
+  if (provider === "linkedin_session") return "Authenticated LinkedIn";
+  if (provider === "linkedin_oidc") return "Member authorized";
+  if (provider === "consented") return "Owner supplied";
+  return "Licensed match";
+}
+
 function renderProfile(payload, elapsedMs) {
   const profile = payload.profile || {};
   const source = payload.source || {};
@@ -137,7 +145,7 @@ function renderProfile(payload, elapsedMs) {
   nodes["profile-name"].textContent = profile.name || "Unnamed profile";
   nodes["profile-headline"].textContent = profile.headline || "Headline not available";
   nodes["profile-location"].textContent = profile.location || "Location not available";
-  nodes["source-chip"].textContent = isSample ? "Sample data" : "Licensed match";
+  nodes["source-chip"].textContent = sourceLabel(source.provider);
   nodes["source-chip"].className = `source-chip${isSample ? " sample" : ""}`;
   nodes["profile-link"].href = payload.canonical_url;
   nodes["profile-link"].hidden = isSample;
@@ -181,7 +189,7 @@ function renderProfile(payload, elapsedMs) {
   clear(nodes["provenance-list"]);
   addDefinition("Provider", source.provider);
   addDefinition("Mode", source.mode);
-  addDefinition("Licensed", source.licensed ? "Yes" : "No");
+  addDefinition("License-backed", source.licensed ? "Yes" : "No");
   addDefinition("Identifier", payload.public_identifier);
   clear(nodes.limitations);
   (source.limitations || []).forEach((item) => nodes.limitations.append(create("p", "", item)));
