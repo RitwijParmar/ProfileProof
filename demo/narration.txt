@@ -1,0 +1,15 @@
+Hi, this is ProfileProof. Let me show you the real product, and just as importantly, where it can fail.
+
+The public application is running on Google Cloud Run. The operational badge comes from the live API, not a static mock. ProfileProof validates a LinkedIn profile URL, verifies the returned identity, normalizes professional fields, and attaches provenance.
+
+I’ll load the safe sample so the complete interface is visible without exposing private data. This is a real request through the deployed API. The response includes identity, employment, education, skills, certifications, languages, completeness, timing, cache state, and a versioned schema.
+
+The raw JSON view shows this is an API product, not just a dashboard. Source mode, limitations, warnings, request ID, and cache state are all explicit. Synthetic data is always labeled and can never silently replace a real result.
+
+The production LinkedIn path is browserless and directly calls reverse-engineered HTTP surfaces. A live public-profile test returned the real name, location, experience, education, and image. The repeat request returned cached true.
+
+Here are the failures. Invalid URLs are rejected before any upstream call. LinkedIn can redact fields, rate-limit requests, change its undocumented response, or expire a session. ProfileProof returns warnings or problem-details errors and never invents missing data.
+
+LinkedIn also blocks Google data-center egress. Cloud Run therefore forwards acquisition to an automatically discovered residential worker on this Mac. The tunnel reconnects and republishes itself automatically. If the Mac is off, the GCP interface and health endpoint stay online, but real acquisition reports provider unavailable. True twenty-four-seven operation requires an always-on home device or a compliant residential proxy.
+
+That is ProfileProof: typed output, honest provenance, graceful failure, and a real production deployment.
