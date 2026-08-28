@@ -14,7 +14,8 @@ enrichment provider.
 Open the landing page and enter a real profile, or call the API:
 
 **[Watch the narrated live demo](demo/profileproof-live-demo.mp4)** — deployed UI,
-API response, raw JSON, validation failure, and operational limitations.
+verified real-profile response, raw JSON, pen annotations, validation failure,
+Hinglish narration, and honest operational limitations.
 
 ```bash
 curl -sS https://profileproof-api-980932890834.us-east1.run.app/v1/profiles/resolve \

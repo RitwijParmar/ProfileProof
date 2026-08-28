@@ -1,15 +1,17 @@
-Hi, this is ProfileProof. Let me show you the real product, and just as importantly, where it can fail.
+Hey, let me quickly show you ProfileProof. Ye koi static mock ya PPT nahi hai. Actual product Google Cloud Run par live chal raha hai, and the green operational badge is coming from the real API.
 
-The public application is running on Google Cloud Run. The operational badge comes from the live API, not a static mock. ProfileProof validates a LinkedIn profile URL, verifies the returned identity, normalizes professional fields, and attaches provenance.
+Basic flow simple hai. You give it a LinkedIn profile URL. Backend URL ko canonicalize karta hai, returned identity verify karta hai, professional fields normalize karta hai, and every response ke saath proper provenance deta hai.
 
-I’ll load the safe sample so the complete interface is visible without exposing private data. This is a real request through the deployed API. The response includes identity, employment, education, skills, certifications, languages, completeness, timing, cache state, and a versioned schema.
+Pehle main safe sample load kar raha hoon, just to show the complete interface without exposing private data. Ye bhi deployed API ko actual request hai. Here you can see employment, education, skills, certifications, languages, completeness, latency, cache state, and schema version.
 
-The raw JSON view shows this is an API product, not just a dashboard. Source mode, limitations, warnings, request ID, and cache state are all explicit. Synthetic data is always labeled and can never silently replace a real result.
+Raw JSON tab important hai, because this is not just a fancy dashboard. Source mode, warnings, limitations, request ID, and cache flag sab clearly visible hain. Synthetic record ko sample label milta hai. It can never silently pretend to be real LinkedIn data.
 
-The production LinkedIn path is browserless and directly calls reverse-engineered HTTP surfaces. A live public-profile test returned the real name, location, experience, education, and image. The repeat request returned cached true.
+Now this is the real-profile example. This response was captured from the stable production endpoint for Sean Thorne’s public profile. HTTP two hundred. Real name, location, experience, education, public acquisition mode, fifty percent completeness, and cached true on the verified repeat request. No fields are invented.
 
-Here are the failures. Invalid URLs are rejected before any upstream call. LinkedIn can redact fields, rate-limit requests, change its undocumented response, or expire a session. ProfileProof returns warnings or problem-details errors and never invents missing data.
+Failure handling bhi properly visible hai. Invalid URL upstream tak jaata hi nahi; it fails immediately with a typed problem-details response. LinkedIn public fields redact kar sakta hai, rate limit kar sakta hai, session expire ho sakta hai, or undocumented response change ho sakta hai. In every case, ProfileProof returns explicit warnings or an honest error.
 
-LinkedIn also blocks Google data-center egress. Cloud Run therefore forwards acquisition to an automatically discovered residential worker on this Mac. The tunnel reconnects and republishes itself automatically. If the Mac is off, the GCP interface and health endpoint stay online, but real acquisition reports provider unavailable. True twenty-four-seven operation requires an always-on home device or a compliant residential proxy.
+One real infrastructure limitation hai. LinkedIn Google data-center egress ko block karta hai. So Cloud Run acquisition request ko is Mac par running residential worker tak forward karta hai. Tunnel automatically reconnect hota hai and its latest address republish karta hai.
 
-That is ProfileProof: typed output, honest provenance, graceful failure, and a real production deployment.
+But agar Mac off hai, GCP UI and health endpoint online rahenge, while real-profile acquisition provider unavailable return karega. Proper twenty-four-seven setup ke liye worker ko an always-on home device, mini PC, ya compliant residential proxy par move karna hoga.
+
+So basically, ProfileProof gives typed data, verified identity, transparent provenance, caching, observability, and honest failure behavior—through a real deployed system.

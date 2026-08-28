@@ -1,38 +1,44 @@
 1
-00:00:00,000 --> 00:00:08,500
-This is ProfileProof—the real product, including where it can fail.
+00:00:00,000 --> 00:00:14,000
+Ye static mock ya PPT nahi hai. Actual product Google Cloud Run par live hai,
+and the operational badge comes from the real API.
 
 2
-00:00:08,500 --> 00:00:23,000
-The public application runs on Google Cloud Run and validates, verifies,
-normalizes, and adds provenance to professional profile data.
+00:00:14,000 --> 00:00:27,000
+ProfileProof canonicalizes the LinkedIn URL, verifies identity,
+normalizes professional fields, and attaches provenance.
 
 3
-00:00:23,000 --> 00:00:41,000
-The safe sample exercises the deployed API and complete product interface
+00:00:27,000 --> 00:00:43,000
+The safe sample exercises the deployed API and full interface
 without exposing anyone's private data.
 
 4
-00:00:41,000 --> 00:00:55,000
-Raw JSON exposes source mode, limitations, warnings, request ID,
-cache state, and the versioned schema.
+00:00:43,000 --> 00:00:57,000
+Raw JSON exposes source mode, warnings, limitations,
+request ID, cache state, and the versioned schema.
 
 5
-00:00:55,000 --> 00:01:08,000
-The production LinkedIn path is browserless and directly calls
-reverse-engineered HTTP surfaces.
+00:00:57,000 --> 00:01:15,000
+This is a verified real-profile response from the stable GCP endpoint:
+HTTP 200, public professional fields, provenance, and cached true.
 
 6
-00:01:08,000 --> 00:01:22,000
-Invalid URLs fail before any upstream call. Redaction, rate limits,
-session expiry, and schema changes remain explicit.
+00:01:15,000 --> 00:01:32,000
+Invalid input fails before any upstream call. Redaction, rate limits,
+session expiry, and response changes remain explicit.
 
 7
-00:01:22,000 --> 00:01:43,000
-Cloud Run uses an automatically discovered residential worker because
-LinkedIn blocks Google data-center egress. The Mac must remain online.
+00:01:32,000 --> 00:01:46,000
+LinkedIn blocks Google data-center egress, so Cloud Run uses an
+automatically discovered residential worker on this Mac.
 
 8
-00:01:43,000 --> 00:01:49,500
-Typed output, honest provenance, graceful failure,
-and a real production deployment.
+00:01:46,000 --> 00:02:01,000
+If the Mac is off, GCP remains healthy but real acquisition reports
+provider unavailable. An always-on home worker removes this limitation.
+
+9
+00:02:01,000 --> 00:02:07,200
+Typed data, verified identity, transparent provenance,
+observability, caching, and honest failure behavior.

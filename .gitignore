@@ -13,3 +13,4 @@ __pycache__/
 *.py[cod]
 demo/frames/
 demo/output/
+demo/v2_frames/
