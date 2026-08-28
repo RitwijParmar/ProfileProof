@@ -1,11 +1,9 @@
-from .consented import ConsentedProvider
 from .demo import DemoProvider
-from .linkedin_oidc import LinkedInOidcProvider
-from .people_data_labs import PeopleDataLabsProvider
+from .linkedin_session import LinkedInSessionProvider
+from .relay import ResidentialRelayProvider
 
 __all__ = [
-    "ConsentedProvider",
     "DemoProvider",
-    "LinkedInOidcProvider",
-    "PeopleDataLabsProvider",
+    "LinkedInSessionProvider",
+    "ResidentialRelayProvider",
 ]

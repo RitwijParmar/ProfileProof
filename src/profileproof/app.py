@@ -33,10 +33,9 @@ from .models import (
     ResolveRequest,
 )
 from .providers import (
-    ConsentedProvider,
     DemoProvider,
-    LinkedInOidcProvider,
-    PeopleDataLabsProvider,
+    LinkedInSessionProvider,
+    ResidentialRelayProvider,
 )
 from .providers.base import ProfileProvider
 from .rate_limit import SlidingWindowLimiter
@@ -198,7 +197,9 @@ class ApiMiddleware(BaseHTTPMiddleware):
             if path.startswith("/v1/"):
                 allowed, remaining, retry_after = await self._limiter.allow(_client_key(request))
                 if not allowed:
-                    raise RateLimitExceeded("Too many requests from this client.")
+                    raise RateLimitExceeded(
+                        "Too many requests from this client.", retry_after=retry_after
+                    )
                 request.state.rate_limit_remaining = remaining
                 if self._settings.api_key_sha256:
                     supplied = request.headers.get("x-api-key", "")
@@ -217,7 +218,8 @@ class ApiMiddleware(BaseHTTPMiddleware):
             response = _problem(
                 request, error.status_code, error.title, error.detail, error.problem_type
             )
-            response.headers["Retry-After"] = str(retry_after)
+            if error.retry_after is not None:
+                response.headers["Retry-After"] = str(error.retry_after)
         return await self._finalize(request, response, started)
 
     async def _finalize(self, request: Request, response: Response, started: float) -> Response:
@@ -249,44 +251,54 @@ class ApiMiddleware(BaseHTTPMiddleware):
 
 def create_app(
     settings: Settings | None = None,
-    oidc_transport: httpx.AsyncBaseTransport | None = None,
+    upstream_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     config = settings or get_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with httpx.AsyncClient(
-            timeout=max(config.oidc_timeout_seconds, config.pdl_timeout_seconds),
+            timeout=config.linkedin_timeout_seconds,
             follow_redirects=False,
-            transport=oidc_transport,
-        ) as oidc_client:
-            pdl_provider = PeopleDataLabsProvider(
-                oidc_client,
-                config.pdl_api_key.get_secret_value() if config.pdl_api_key else None,
-                config.pdl_min_likelihood,
-                config.pdl_calls_per_instance_per_day,
+            transport=upstream_transport,
+        ) as upstream_client:
+            linkedin_provider = LinkedInSessionProvider(
+                upstream_client,
+                config.linkedin_li_at.get_secret_value() if config.linkedin_li_at else None,
+                (
+                    config.linkedin_jsessionid.get_secret_value()
+                    if config.linkedin_jsessionid
+                    else None
+                ),
+                config.linkedin_calls_per_instance_per_day,
+                config.linkedin_min_interval_seconds,
+                config.linkedin_cooldown_seconds,
+                config.linkedin_user_agent,
             )
             providers: dict[ProviderName, ProfileProvider] = {
                 ProviderName.DEMO: DemoProvider(),
-                ProviderName.CONSENTED: ConsentedProvider(),
-                ProviderName.LINKEDIN_OIDC: LinkedInOidcProvider(oidc_client),
-                ProviderName.PEOPLE_DATA_LABS: pdl_provider,
+                ProviderName.LINKEDIN_DIRECT: (
+                    ResidentialRelayProvider(upstream_client, config.relay_pointer_url)
+                    if config.relay_pointer_url
+                    else linkedin_provider
+                ),
             }
             app.state.service = ProfileService(
                 providers=providers,
                 cache=TtlCache(config.cache_ttl_seconds),
             )
             app.state.metrics = Metrics()
-            app.state.pdl_configured = pdl_provider.configured
+            app.state.linkedin_authenticated = linkedin_provider.authenticated
+            app.state.residential_relay = bool(config.relay_pointer_url)
             yield
 
     application = FastAPI(
         title="ProfileProof API",
         version=__version__,
-        summary="Professional profile normalization with licensed real-data enrichment",
+        summary="LinkedIn profile acquisition and structured normalization",
         description=(
-            "Normalizes real licensed, owner-consented, official self-profile, and synthetic "
-            "professional data through explicit providers with provenance."
+            "Acquires authenticated LinkedIn profile data and normalizes it into a typed "
+            "professional schema with explicit provenance and limitations."
         ),
         docs_url=None,
         redoc_url=None,
@@ -299,7 +311,12 @@ def create_app(
 
     @application.exception_handler(ProfileProofError)
     async def profileproof_error(request: Request, error: ProfileProofError) -> JSONResponse:
-        return _problem(request, error.status_code, error.title, error.detail, error.problem_type)
+        response = _problem(
+            request, error.status_code, error.title, error.detail, error.problem_type
+        )
+        if isinstance(error, RateLimitExceeded) and error.retry_after is not None:
+            response.headers["Retry-After"] = str(error.retry_after)
+        return response
 
     @application.exception_handler(RequestValidationError)
     async def validation_error(request: Request, error: RequestValidationError) -> JSONResponse:
@@ -357,22 +374,16 @@ def create_app(
         return CapabilitiesResponse(
             providers=[
                 ProviderCapability(
-                    name=ProviderName.PEOPLE_DATA_LABS,
-                    configured=bool(request.app.state.pdl_configured),
-                    real_data=True,
-                    description="Licensed real-profile enrichment matched by LinkedIn URL.",
-                ),
-                ProviderCapability(
-                    name=ProviderName.LINKEDIN_OIDC,
+                    name=ProviderName.LINKEDIN_DIRECT,
                     configured=True,
                     real_data=True,
-                    description="Official authenticated-member lite profile.",
-                ),
-                ProviderCapability(
-                    name=ProviderName.CONSENTED,
-                    configured=True,
-                    real_data=True,
-                    description="Owner-supplied profile normalization without persistence.",
+                    description=(
+                        "Direct LinkedIn acquisition through an automatically discovered "
+                        "residential relay."
+                        if request.app.state.residential_relay
+                        else "Direct LinkedIn acquisition with authenticated Voyager when "
+                        "configured and a public structured-profile fallback."
+                    ),
                 ),
                 ProviderCapability(
                     name=ProviderName.DEMO,

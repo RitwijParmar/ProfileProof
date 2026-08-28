@@ -6,9 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, mod
 
 class ProviderName(StrEnum):
     DEMO = "demo"
-    CONSENTED = "consented"
-    LINKEDIN_OIDC = "linkedin_oidc"
-    PEOPLE_DATA_LABS = "people_data_labs"
+    LINKEDIN_DIRECT = "linkedin_direct"
 
 
 class DateRange(BaseModel):
@@ -28,7 +26,7 @@ class DateRange(BaseModel):
 
 class Experience(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    title: str = Field(min_length=1, max_length=200)
+    title: str | None = Field(default=None, max_length=200)
     company: str = Field(min_length=1, max_length=200)
     location: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=10_000)
@@ -90,16 +88,7 @@ class ProfileData(BaseModel):
 class ResolveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     profile_url: str = Field(min_length=1, max_length=500)
-    provider: ProviderName = ProviderName.DEMO
-    consented_profile: ProfileData | None = None
-
-    @model_validator(mode="after")
-    def consented_payload_matches_provider(self) -> "ResolveRequest":
-        if self.provider == ProviderName.CONSENTED and self.consented_profile is None:
-            raise ValueError("consented_profile is required for the consented provider")
-        if self.provider != ProviderName.CONSENTED and self.consented_profile is not None:
-            raise ValueError("consented_profile is only accepted by the consented provider")
-        return self
+    provider: ProviderName = ProviderName.LINKEDIN_DIRECT
 
 
 class SourceInfo(BaseModel):

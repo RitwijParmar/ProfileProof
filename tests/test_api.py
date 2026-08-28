@@ -52,21 +52,24 @@ async def test_capabilities_do_not_expose_secrets(client: httpx.AsyncClient) -> 
     response = await client.get("/v1/capabilities")
     assert response.status_code == 200
     providers = {item["name"]: item for item in response.json()["providers"]}
-    assert providers["people_data_labs"]["configured"] is False
-    assert providers["people_data_labs"]["real_data"] is True
-    assert "api_key" not in response.text.casefold()
+    assert set(providers) == {"linkedin_direct", "demo"}
+    assert providers["linkedin_direct"]["real_data"] is True
+    assert "secret" not in response.text.casefold()
 
 
 @pytest.mark.asyncio
 async def test_demo_profile_end_to_end(client: httpx.AsyncClient) -> None:
     first = await client.post(
         "/v1/profiles/resolve",
-        json={"profile_url": "https://linkedin.com/in/profileproof-demo?trk=test"},
+        json={
+            "profile_url": "https://linkedin.com/in/profileproof-demo?trk=test",
+            "provider": "demo",
+        },
         headers={"X-Request-ID": "test-request"},
     )
     second = await client.post(
         "/v1/profiles/resolve",
-        json={"profile_url": "https://www.linkedin.com/in/profileproof-demo"},
+        json={"profile_url": "https://www.linkedin.com/in/profileproof-demo", "provider": "demo"},
     )
     assert first.status_code == 200
     payload = first.json()
@@ -83,11 +86,11 @@ async def test_demo_profile_end_to_end(client: httpx.AsyncClient) -> None:
 async def test_arbitrary_demo_url_fails_honestly(client: httpx.AsyncClient) -> None:
     response = await client.post(
         "/v1/profiles/resolve",
-        json={"profile_url": "https://www.linkedin.com/in/real-person"},
+        json={"profile_url": "https://www.linkedin.com/in/real-person", "provider": "demo"},
     )
     assert response.status_code == 424
     assert response.headers["content-type"].startswith("application/problem+json")
-    assert "does not scrape" in response.json()["detail"]
+    assert "synthetic fixture" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -108,28 +111,6 @@ async def test_request_validation_uses_problem_details(client: httpx.AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_consented_profile_is_normalized_without_persistence(
-    client: httpx.AsyncClient,
-) -> None:
-    response = await client.post(
-        "/v1/profiles/resolve",
-        json={
-            "profile_url": "https://www.linkedin.com/in/owner-supplied",
-            "provider": "consented",
-            "consented_profile": {
-                "name": "Owner Supplied",
-                "headline": "Principal Engineer",
-                "skills": [" Python ", "Python", "Go"],
-            },
-        },
-    )
-    assert response.status_code == 200
-    assert response.json()["profile"]["skills"] == ["Python", "Go"]
-    assert response.json()["source"]["consented"] is True
-    assert response.json()["meta"]["cached"] is False
-
-
-@pytest.mark.asyncio
 async def test_security_headers_are_present(client: httpx.AsyncClient) -> None:
     response = await client.get("/health")
     assert response.headers["x-content-type-options"] == "nosniff"
@@ -141,7 +122,7 @@ async def test_security_headers_are_present(client: httpx.AsyncClient) -> None:
 async def test_metrics_have_bounded_labels(client: httpx.AsyncClient) -> None:
     await client.post(
         "/v1/profiles/resolve",
-        json={"profile_url": "https://www.linkedin.com/in/profileproof-demo"},
+        json={"profile_url": "https://www.linkedin.com/in/profileproof-demo", "provider": "demo"},
     )
     response = await client.get("/metrics")
     assert "profileproof_provider_calls_total" in response.text
@@ -160,11 +141,17 @@ async def test_api_key_guard() -> None:
     ):
         denied = await guarded.post(
             "/v1/profiles/resolve",
-            json={"profile_url": "https://www.linkedin.com/in/profileproof-demo"},
+            json={
+                "profile_url": "https://www.linkedin.com/in/profileproof-demo",
+                "provider": "demo",
+            },
         )
         allowed = await guarded.post(
             "/v1/profiles/resolve",
-            json={"profile_url": "https://www.linkedin.com/in/profileproof-demo"},
+            json={
+                "profile_url": "https://www.linkedin.com/in/profileproof-demo",
+                "provider": "demo",
+            },
             headers={"X-API-Key": "correct-key"},
         )
     assert denied.status_code == 401
@@ -183,12 +170,18 @@ async def test_rate_limit() -> None:
         assert (
             await limited.post(
                 "/v1/profiles/resolve",
-                json={"profile_url": "https://www.linkedin.com/in/profileproof-demo"},
+                json={
+                    "profile_url": "https://www.linkedin.com/in/profileproof-demo",
+                    "provider": "demo",
+                },
             )
         ).status_code == 200
         rejected = await limited.post(
             "/v1/profiles/resolve",
-            json={"profile_url": "https://www.linkedin.com/in/profileproof-demo"},
+            json={
+                "profile_url": "https://www.linkedin.com/in/profileproof-demo",
+                "provider": "demo",
+            },
         )
     assert rejected.status_code == 429
     assert int(rejected.headers["retry-after"]) >= 1

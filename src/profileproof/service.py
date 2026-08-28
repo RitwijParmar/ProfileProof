@@ -81,23 +81,11 @@ class ProfileService:
     ) -> ProfileResponse:
         canonical = canonicalize_linkedin_profile_url(request.profile_url)
         provider = self._providers[request.provider]
-        cacheable = request.provider in {
-            ProviderName.DEMO,
-            ProviderName.PEOPLE_DATA_LABS,
-        }
         cache_key = hashlib.sha256(f"{request.provider}:{canonical.url}".encode()).hexdigest()
         context = ProviderContext(
             authorization=authorization,
-            consented_profile=request.consented_profile,
         )
-        if cacheable:
-            result, cached = await self._fetch_cacheable(cache_key, provider, canonical, context)
-        else:
-            result = await provider.fetch(
-                canonical,
-                context,
-            )
-            cached = False
+        result, cached = await self._fetch_cacheable(cache_key, provider, canonical, context)
         completeness, fields = profile_completeness(result.profile)
         return ProfileResponse(
             canonical_url=HttpUrl(canonical.url),

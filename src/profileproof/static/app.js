@@ -20,8 +20,8 @@ const nodes = Object.fromEntries(
   ].map((id) => [id, document.getElementById(id)])
 );
 
-let licensedConfigured = false;
-let defaultProvider = "demo";
+let realProviderConfigured = false;
+let defaultProvider = "linkedin_direct";
 let lastRequest = null;
 let lastPayload = null;
 
@@ -84,7 +84,7 @@ function renderTimeline(container, items, type) {
     const subtitle = type === "experience"
       ? [item.company, item.location].filter(Boolean).join(" · ")
       : [item.degree, item.field_of_study].filter(Boolean).join(" · ");
-    copy.append(create("h3", "timeline-title", title || "Untitled record"));
+    copy.append(create("h3", "timeline-title", title || "Role not publicly shown"));
     if (subtitle) copy.append(create("p", "timeline-subtitle", subtitle));
     copy.append(create("p", "timeline-meta", formatRange(item.dates)));
     if (item.description) copy.append(create("p", "timeline-description", item.description));
@@ -122,6 +122,11 @@ function confidenceLabel(value) {
   return "Review recommended";
 }
 
+function sourceLabel(provider) {
+  if (provider === "demo") return "Sample data";
+  return "Direct LinkedIn";
+}
+
 function renderProfile(payload, elapsedMs) {
   const profile = payload.profile || {};
   const source = payload.source || {};
@@ -137,7 +142,7 @@ function renderProfile(payload, elapsedMs) {
   nodes["profile-name"].textContent = profile.name || "Unnamed profile";
   nodes["profile-headline"].textContent = profile.headline || "Headline not available";
   nodes["profile-location"].textContent = profile.location || "Location not available";
-  nodes["source-chip"].textContent = isSample ? "Sample data" : "Licensed match";
+  nodes["source-chip"].textContent = sourceLabel(source.provider);
   nodes["source-chip"].className = `source-chip${isSample ? " sample" : ""}`;
   nodes["profile-link"].href = payload.canonical_url;
   nodes["profile-link"].hidden = isSample;
@@ -181,7 +186,7 @@ function renderProfile(payload, elapsedMs) {
   clear(nodes["provenance-list"]);
   addDefinition("Provider", source.provider);
   addDefinition("Mode", source.mode);
-  addDefinition("Licensed", source.licensed ? "Yes" : "No");
+  addDefinition("License-backed", source.licensed ? "Yes" : "No");
   addDefinition("Identifier", payload.public_identifier);
   clear(nodes.limitations);
   (source.limitations || []).forEach((item) => nodes.limitations.append(create("p", "", item)));
@@ -196,9 +201,15 @@ function renderProfile(payload, elapsedMs) {
 function friendlyError(status, payload) {
   const title = payload?.title || "Profile resolution failed";
   let detail = payload?.detail || "The API did not return a usable response. Please try again.";
-  if (status === 404) detail = "No confident profile match was found. Check the URL and try again.";
-  if (status === 429) detail = "The resolver is receiving too many requests. Wait briefly and retry.";
-  if (status >= 500) detail = "The data source is temporarily unavailable. Your input was not stored.";
+  if (status === 404 && !payload?.detail) {
+    detail = "No confident profile match was found. Check the URL and try again.";
+  }
+  if (status === 429 && !payload?.detail) {
+    detail = "The resolver is receiving too many requests. Wait briefly and retry.";
+  }
+  if (status >= 500 && !payload?.detail) {
+    detail = "The data source is temporarily unavailable. Your input was not stored.";
+  }
   return {title, detail};
 }
 
@@ -216,10 +227,10 @@ async function resolveProfile({sample = false} = {}) {
     nodes.url.focus();
     return;
   }
-  if (!licensedConfigured && provider === "demo" && requestedUrl !== SAMPLE_URL) {
+  if (!realProviderConfigured && provider !== "demo") {
     showError(
       "Live enrichment is not connected yet",
-      "This deployment is healthy, but its licensed data key is not configured. Open the complete sample profile to explore the product flow."
+      "This deployment is healthy, but its authenticated acquisition secret is not configured. The sample remains available only as a secondary schema preview."
     );
     return;
   }
@@ -271,16 +282,24 @@ async function loadCapabilities() {
     const response = await fetch("/v1/capabilities", {headers: {accept: "application/json"}});
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
-    const licensed = payload.providers.find((item) => item.name === "people_data_labs");
-    licensedConfigured = Boolean(licensed?.configured);
-    defaultProvider = licensedConfigured ? "people_data_labs" : "demo";
-    if (licensedConfigured) {
+    const linkedin = payload.providers.find((item) => item.name === "linkedin_direct");
+    realProviderConfigured = Boolean(linkedin?.configured);
+    defaultProvider = "linkedin_direct";
+    if (realProviderConfigured) {
       nodes.url.value = REAL_EXAMPLE_URL;
-      setMode("", "Licensed data connected", "Professional-only enrichment · confidence threshold 8/10 · no contact fields");
+      setMode(
+        "",
+        "Direct LinkedIn acquisition available",
+        "Authenticated Voyager with public structured fallback · no browser automation · no third-party enrichment"
+      );
     } else {
-      nodes.url.value = SAMPLE_URL;
-      setMode("sample", "Sample preview", "Live API is healthy · previewing the complete product flow with clearly labeled sample data");
-      await resolveProfile({sample: true});
+      nodes.url.value = REAL_EXAMPLE_URL;
+      setMode(
+        "error",
+        "Real acquisition not connected",
+        "A real profile provider is required for challenge compliance · sample data is secondary only"
+      );
+      setView("empty");
     }
   } catch (_error) {
     setMode("error", "Source check unavailable", "The API is online, but its capability endpoint could not be read.");

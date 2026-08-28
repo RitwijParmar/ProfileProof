@@ -42,3 +42,7 @@ class RateLimitExceeded(ProfileProofError):
     status_code = 429
     title = "Rate limit exceeded"
     problem_type = "https://profileproof.dev/problems/rate-limit"
+
+    def __init__(self, detail: str, retry_after: int | None = None) -> None:
+        super().__init__(detail)
+        self.retry_after = retry_after

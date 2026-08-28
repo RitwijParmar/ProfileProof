@@ -1,7 +1,7 @@
 [project]
 name = "profileproof"
 version = "1.1.0"
-description = "Licensed professional-profile enrichment and normalization API"
+description = "Reverse-engineered LinkedIn profile acquisition and normalization API"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"

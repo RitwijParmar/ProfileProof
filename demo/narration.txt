@@ -1,0 +1,19 @@
+Hey—let me give you a proper walkthrough of ProfileProof. This isn’t a static mock or a slide deck. The product is actually running on Google Cloud Run, and that green operational badge is coming from the live API.
+
+The basic flow is simple. You give it a LinkedIn profile URL. The backend canonicalizes the URL, verifies that the returned identity is the one you asked for, normalizes the professional fields, and attaches clear provenance to the response.
+
+I’ll start with the safe sample so I can show the complete interface without exposing anyone’s private data. This still makes a real request to the deployed API. You can see employment, education, skills, certifications, languages, completeness, response time, cache state, and the schema version.
+
+The raw JSON view matters because this is an API product, not just a good-looking dashboard. The source mode, warnings, limitations, request ID, and cache flag are all visible. A synthetic record is always marked as sample data. It can never quietly pretend to be a real LinkedIn result.
+
+Now here’s a real-profile example. This response was captured from the stable production endpoint for Sean Thorne’s public profile. It returned HTTP two hundred, with the real public name, location, experience, education, acquisition mode, fifty-percent completeness, and cached true on the verified repeat request. Nothing missing was invented.
+
+Failure handling is just as important. An invalid URL never reaches LinkedIn; it fails immediately with a typed problem-details response. LinkedIn can also redact fields, expire a session, change an undocumented response, or rate-limit the worker.
+
+That rate limit is what caused the failed attempt on my own profile. LinkedIn rejected the residential request, and the relay originally hid that cause behind a generic five-oh-two. That is now patched. A throttle is preserved as four-twenty-nine, includes Retry-After, and opens a cooldown circuit so ProfileProof does not keep hammering LinkedIn. Other worker errors also keep their original safe explanation.
+
+There is one honest infrastructure limitation. LinkedIn blocks Google data-center egress, so Cloud Run forwards acquisition to a residential worker running on this Mac. The tunnel reconnects automatically and republishes its current address.
+
+If the Mac is switched off, the GCP interface and health endpoint remain online, while real-profile acquisition reports provider unavailable. For true twenty-four-seven operation, the worker should move to an always-on home device, mini PC, or a compliant residential proxy.
+
+So, in practical terms, ProfileProof gives you typed data, verified identity, transparent provenance, caching, observability, and failure behavior you can actually trust—all through a real deployed system.

@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 from pydantic import ValidationError
 
-from profileproof.models import DateRange, ProfileData, ProviderName, ResolveRequest
+from profileproof.models import DateRange, ProfileData
 from profileproof.service import profile_completeness
 
 
@@ -20,23 +20,6 @@ def test_current_date_range_rejects_end() -> None:
 def test_skills_are_trimmed_and_deduplicated() -> None:
     profile = ProfileData(skills=[" Python ", "Python", "", "C++"])
     assert profile.skills == ["Python", "C++"]
-
-
-def test_consent_payload_requires_consent_provider() -> None:
-    with pytest.raises(ValidationError):
-        ResolveRequest(
-            profile_url="https://www.linkedin.com/in/example-user",
-            provider=ProviderName.DEMO,
-            consented_profile=ProfileData(name="Example"),
-        )
-
-
-def test_consent_provider_requires_payload() -> None:
-    with pytest.raises(ValidationError):
-        ResolveRequest(
-            profile_url="https://www.linkedin.com/in/example-user",
-            provider=ProviderName.CONSENTED,
-        )
 
 
 def test_completeness_is_deterministic() -> None:

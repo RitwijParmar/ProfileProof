@@ -8,7 +8,6 @@ from profileproof.url_policy import CanonicalProfileUrl
 @dataclass(frozen=True)
 class ProviderContext:
     authorization: str | None = None
-    consented_profile: ProfileData | None = None
 
 
 @dataclass(frozen=True)
