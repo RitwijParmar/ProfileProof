@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     max_body_bytes: int = Field(default=65_536, ge=1024, le=1_048_576)
     linkedin_timeout_seconds: float = Field(default=10.0, ge=0.1, le=30.0)
     linkedin_min_interval_seconds: float = Field(default=5.0, ge=0.0, le=60.0)
+    linkedin_cooldown_seconds: int = Field(default=900, ge=60, le=86_400)
     linkedin_calls_per_instance_per_day: int = Field(default=100, ge=1, le=10_000)
     linkedin_user_agent: str = (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "

@@ -37,6 +37,22 @@ class ResidentialRelayProvider:
         self._pointer_url = pointer_url
 
     @staticmethod
+    def _problem_detail(response: httpx.Response) -> str | None:
+        if len(response.content) > _MAX_RESPONSE_BYTES:
+            return None
+        try:
+            payload = response.json()
+        except ValueError:
+            return None
+        detail = payload.get("detail") if isinstance(payload, dict) else None
+        return detail[:500] if isinstance(detail, str) and detail else None
+
+    @staticmethod
+    def _retry_after(response: httpx.Response) -> int | None:
+        value = response.headers.get("retry-after")
+        return min(86_400, max(1, int(value))) if value and value.isdecimal() else None
+
+    @staticmethod
     def _validate_origin(value: str) -> str:
         origin = value.strip().rstrip("/")
         parsed = urlsplit(origin)
@@ -74,13 +90,19 @@ class ResidentialRelayProvider:
                 "The residential acquisition relay is unreachable."
             ) from error
 
+        detail = self._problem_detail(response)
         if response.status_code == 404:
-            raise ProfileNotFound("LinkedIn did not return this public profile.")
+            raise ProfileNotFound(detail or "LinkedIn did not return this public profile.")
+        if response.status_code == 424:
+            raise ProviderUnavailable(detail or "The residential acquisition relay is unavailable.")
         if response.status_code == 429:
-            raise RateLimitExceeded("The residential acquisition relay is rate limited.")
+            raise RateLimitExceeded(
+                detail or "The residential acquisition relay is rate limited.",
+                retry_after=self._retry_after(response),
+            )
         if response.status_code != 200:
             raise ProviderRejected(
-                f"The residential acquisition relay returned HTTP {response.status_code}."
+                detail or f"The residential acquisition relay returned HTTP {response.status_code}."
             )
         if len(response.content) > _MAX_RESPONSE_BYTES:
             raise ProviderRejected("The residential acquisition relay response was too large.")

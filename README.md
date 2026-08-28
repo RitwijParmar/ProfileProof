@@ -15,7 +15,7 @@ Open the landing page and enter a real profile, or call the API:
 
 **[Watch the narrated live demo](demo/profileproof-live-demo.mp4)** — deployed UI,
 verified real-profile response, raw JSON, pen annotations, validation failure,
-Hinglish narration, and honest operational limitations.
+natural English narration, and honest operational limitations.
 
 ```bash
 curl -sS https://profileproof-api-980932890834.us-east1.run.app/v1/profiles/resolve \
@@ -68,7 +68,9 @@ flowchart LR
 
 Identical concurrent cache misses share one upstream operation, preventing a
 request burst from multiplying LinkedIn calls. Uncached upstream starts are
-serialized and paced per instance. Acquisition is isolated behind
+serialized and paced per instance. A LinkedIn `429` or non-standard `999` opens
+a bounded cooldown circuit, exposes `Retry-After`, and prevents retries from
+amplifying an upstream throttle. Acquisition is isolated behind
 a provider interface, so the response contract is independent of the data source.
 The deployed service discovers the current residential worker through a public,
 non-secret Cloud Storage pointer. Both the pointer host and relay hostname suffix
@@ -140,6 +142,8 @@ Primary references:
 - Data visibility is limited to fields visible to the configured account.
 - The public fallback can be redacted, rate-limited, or omit skills,
   certifications, languages, and experience details.
+- Throttling is not bypassed: the API preserves the upstream cause, returns
+  `429` with `Retry-After`, and pauses new LinkedIn calls for the configured cooldown.
 - Operators must ensure their use complies with applicable platform terms.
 - The demo remains synthetic by design; it is a test fixture, not the main product.
 - Cloud Run may cold-start when scaling from zero.

@@ -197,7 +197,9 @@ class ApiMiddleware(BaseHTTPMiddleware):
             if path.startswith("/v1/"):
                 allowed, remaining, retry_after = await self._limiter.allow(_client_key(request))
                 if not allowed:
-                    raise RateLimitExceeded("Too many requests from this client.")
+                    raise RateLimitExceeded(
+                        "Too many requests from this client.", retry_after=retry_after
+                    )
                 request.state.rate_limit_remaining = remaining
                 if self._settings.api_key_sha256:
                     supplied = request.headers.get("x-api-key", "")
@@ -216,7 +218,8 @@ class ApiMiddleware(BaseHTTPMiddleware):
             response = _problem(
                 request, error.status_code, error.title, error.detail, error.problem_type
             )
-            response.headers["Retry-After"] = str(retry_after)
+            if error.retry_after is not None:
+                response.headers["Retry-After"] = str(error.retry_after)
         return await self._finalize(request, response, started)
 
     async def _finalize(self, request: Request, response: Response, started: float) -> Response:
@@ -269,6 +272,7 @@ def create_app(
                 ),
                 config.linkedin_calls_per_instance_per_day,
                 config.linkedin_min_interval_seconds,
+                config.linkedin_cooldown_seconds,
                 config.linkedin_user_agent,
             )
             providers: dict[ProviderName, ProfileProvider] = {
@@ -307,7 +311,12 @@ def create_app(
 
     @application.exception_handler(ProfileProofError)
     async def profileproof_error(request: Request, error: ProfileProofError) -> JSONResponse:
-        return _problem(request, error.status_code, error.title, error.detail, error.problem_type)
+        response = _problem(
+            request, error.status_code, error.title, error.detail, error.problem_type
+        )
+        if isinstance(error, RateLimitExceeded) and error.retry_after is not None:
+            response.headers["Retry-After"] = str(error.retry_after)
+        return response
 
     @application.exception_handler(RequestValidationError)
     async def validation_error(request: Request, error: RequestValidationError) -> JSONResponse:

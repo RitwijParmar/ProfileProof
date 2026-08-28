@@ -62,18 +62,30 @@ async def test_relay_returns_validated_profile() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", [429, 500])
+@pytest.mark.parametrize("status", [424, 429, 500])
 async def test_relay_maps_upstream_failures(status: int) -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url) == POINTER:
             return httpx.Response(200, text=ORIGIN)
-        return httpx.Response(status)
+        return httpx.Response(
+            status,
+            json={"detail": "Original residential worker failure."},
+            headers={"Retry-After": "75"},
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         provider = ResidentialRelayProvider(client, POINTER)
-        expected = RateLimitExceeded if status == 429 else ProviderRejected
-        with pytest.raises(expected):
+        expected = (
+            RateLimitExceeded
+            if status == 429
+            else ProviderUnavailable
+            if status == 424
+            else ProviderRejected
+        )
+        with pytest.raises(expected, match="Original residential worker failure") as captured:
             await provider.fetch(CANONICAL, ProviderContext())
+        if status == 429:
+            assert captured.value.retry_after == 75
 
 
 @pytest.mark.asyncio

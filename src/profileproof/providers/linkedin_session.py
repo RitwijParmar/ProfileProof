@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import re
 import time
 from contextlib import suppress
@@ -401,6 +402,7 @@ class LinkedInSessionProvider:
         jsessionid: str | None,
         calls_per_day: int,
         min_interval_seconds: float,
+        cooldown_seconds: int,
         user_agent: str,
     ) -> None:
         self._client = client
@@ -408,9 +410,11 @@ class LinkedInSessionProvider:
         self._jsessionid = jsessionid
         self._quota = SlidingWindowLimiter(calls_per_day, 86_400)
         self._min_interval_seconds = min_interval_seconds
+        self._cooldown_seconds = cooldown_seconds
         self._user_agent = user_agent
         self._request_lock = asyncio.Lock()
         self._last_request_started = 0.0
+        self._blocked_until = 0.0
 
     @property
     def configured(self) -> bool:
@@ -422,11 +426,32 @@ class LinkedInSessionProvider:
 
     async def _get(self, url: str, **kwargs: Any) -> httpx.Response:
         async with self._request_lock:
-            delay = self._last_request_started + self._min_interval_seconds - time.monotonic()
+            now = time.monotonic()
+            blocked_for = self._blocked_until - now
+            if blocked_for > 0:
+                retry_after = max(1, math.ceil(blocked_for))
+                raise RateLimitExceeded(
+                    f"LinkedIn is cooling down after an upstream throttle; retry in "
+                    f"{retry_after}s.",
+                    retry_after=retry_after,
+                )
+            delay = self._last_request_started + self._min_interval_seconds - now
             if delay > 0:
                 await asyncio.sleep(delay)
             self._last_request_started = time.monotonic()
-            return await self._client.get(url, **kwargs)
+            response = await self._client.get(url, **kwargs)
+            if response.status_code in {429, 999}:
+                retry_after = self._cooldown_seconds
+                raw_retry_after = response.headers.get("retry-after")
+                if raw_retry_after and raw_retry_after.isdecimal():
+                    retry_after = min(86_400, max(1, int(raw_retry_after)))
+                self._blocked_until = time.monotonic() + retry_after
+                raise RateLimitExceeded(
+                    "LinkedIn rate-limited this deployment; automatic upstream requests are "
+                    f"paused for {retry_after}s.",
+                    retry_after=retry_after,
+                )
+            return response
 
     async def fetch(
         self, profile_url: CanonicalProfileUrl, context: ProviderContext
@@ -477,8 +502,6 @@ class LinkedInSessionProvider:
             raise ProfileNotFound("LinkedIn did not return that profile.")
         if response.status_code in {302, 401, 403}:
             raise ProviderUnavailable("The LinkedIn session is expired or was rejected.")
-        if response.status_code in {429, 999}:
-            raise RateLimitExceeded("LinkedIn rate-limited this deployment.")
         if response.status_code != 200:
             raise ProviderRejected(f"LinkedIn returned HTTP {response.status_code}.")
         try:
@@ -554,8 +577,6 @@ class LinkedInSessionProvider:
             raise ProfileNotFound("LinkedIn did not return that profile.")
         if response.status_code in {302, 401, 403}:
             raise ProviderUnavailable("LinkedIn did not expose a public profile response.")
-        if response.status_code in {429, 999}:
-            raise RateLimitExceeded("LinkedIn rate-limited this deployment.")
         if response.status_code != 200:
             raise ProviderRejected(f"LinkedIn returned HTTP {response.status_code}.")
         if len(response.content) > 2_000_000:

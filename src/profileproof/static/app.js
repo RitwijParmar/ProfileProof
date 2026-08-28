@@ -201,9 +201,15 @@ function renderProfile(payload, elapsedMs) {
 function friendlyError(status, payload) {
   const title = payload?.title || "Profile resolution failed";
   let detail = payload?.detail || "The API did not return a usable response. Please try again.";
-  if (status === 404) detail = "No confident profile match was found. Check the URL and try again.";
-  if (status === 429) detail = "The resolver is receiving too many requests. Wait briefly and retry.";
-  if (status >= 500) detail = "The data source is temporarily unavailable. Your input was not stored.";
+  if (status === 404 && !payload?.detail) {
+    detail = "No confident profile match was found. Check the URL and try again.";
+  }
+  if (status === 429 && !payload?.detail) {
+    detail = "The resolver is receiving too many requests. Wait briefly and retry.";
+  }
+  if (status >= 500 && !payload?.detail) {
+    detail = "The data source is temporarily unavailable. Your input was not stored.";
+  }
   return {title, detail};
 }
 

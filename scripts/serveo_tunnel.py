@@ -82,6 +82,11 @@ def main() -> int:
     published: str | None = None
     for line in child.stdout:
         print(line.rstrip(), flush=True)
+        normalized = line.casefold()
+        if "port forwarding for" in normalized and "expired" in normalized:
+            print("relay lease expired; reconnecting", flush=True)
+            child.terminate()
+            break
         match = _ORIGIN_PATTERN.search(line)
         if match and match.group(0) != published:
             published = match.group(0)

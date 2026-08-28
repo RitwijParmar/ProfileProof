@@ -356,6 +356,44 @@ async def test_public_direct_maps_failures(upstream_status: int, expected_status
 
 
 @pytest.mark.asyncio
+async def test_linkedin_rate_limit_opens_cooldown_and_exposes_retry_after() -> None:
+    calls = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(429, headers={"Retry-After": "120"})
+
+    app = create_app(
+        Settings(
+            environment="test",
+            linkedin_min_interval_seconds=0,
+            linkedin_cooldown_seconds=900,
+        ),
+        upstream_transport=httpx.MockTransport(handler),
+    )
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client,
+    ):
+        first = await client.post(
+            "/v1/profiles/resolve",
+            json={"profile_url": "https://www.linkedin.com/in/first-profile"},
+        )
+        second = await client.post(
+            "/v1/profiles/resolve",
+            json={"profile_url": "https://www.linkedin.com/in/second-profile"},
+        )
+
+    assert calls == 1
+    assert first.status_code == second.status_code == 429
+    assert first.headers["retry-after"] == "120"
+    assert 1 <= int(second.headers["retry-after"]) <= 120
+    assert "paused" in first.json()["detail"]
+    assert "cooling down" in second.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_public_direct_rejects_unusable_documents() -> None:
     missing = await _public_request(lambda _request: httpx.Response(200, text="<html></html>"))
     oversized = await _public_request(lambda _request: httpx.Response(200, text="x" * 2_000_001))

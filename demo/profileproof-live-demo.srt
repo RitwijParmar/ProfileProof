@@ -1,44 +1,49 @@
 1
 00:00:00,000 --> 00:00:14,000
-Ye static mock ya PPT nahi hai. Actual product Google Cloud Run par live hai,
-and the operational badge comes from the real API.
+This is not a static mock or slide deck. The product is running on
+Google Cloud Run, and the operational badge comes from the live API.
 
 2
-00:00:14,000 --> 00:00:27,000
+00:00:14,000 --> 00:00:29,000
 ProfileProof canonicalizes the LinkedIn URL, verifies identity,
-normalizes professional fields, and attaches provenance.
+normalizes professional fields, and attaches clear provenance.
 
 3
-00:00:27,000 --> 00:00:43,000
-The safe sample exercises the deployed API and full interface
+00:00:29,000 --> 00:00:45,000
+The safe sample exercises the deployed API and complete interface
 without exposing anyone's private data.
 
 4
-00:00:43,000 --> 00:00:57,000
+00:00:45,000 --> 00:01:00,000
 Raw JSON exposes source mode, warnings, limitations,
 request ID, cache state, and the versioned schema.
 
 5
-00:00:57,000 --> 00:01:15,000
-This is a verified real-profile response from the stable GCP endpoint:
-HTTP 200, public professional fields, provenance, and cached true.
+00:01:00,000 --> 00:01:18,000
+This verified real-profile response returned HTTP 200, public professional
+fields, explicit provenance, and cached true on the repeat request.
 
 6
-00:01:15,000 --> 00:01:32,000
-Invalid input fails before any upstream call. Redaction, rate limits,
-session expiry, and response changes remain explicit.
+00:01:18,000 --> 00:01:31,000
+Invalid input fails before reaching LinkedIn. Redaction, session expiry,
+schema changes, and upstream throttling remain explicit.
 
 7
-00:01:32,000 --> 00:01:46,000
+00:01:31,000 --> 00:01:53,000
+The failed attempt was a LinkedIn throttle. The patch preserves it as 429,
+adds Retry-After, and opens a cooldown circuit instead of retrying blindly.
+
+8
+00:01:53,000 --> 00:02:05,000
 LinkedIn blocks Google data-center egress, so Cloud Run uses an
 automatically discovered residential worker on this Mac.
 
-8
-00:01:46,000 --> 00:02:01,000
-If the Mac is off, GCP remains healthy but real acquisition reports
+9
+00:02:05,000 --> 00:02:16,000
+If the Mac is off, GCP stays healthy but real acquisition reports
 provider unavailable. An always-on home worker removes this limitation.
 
-9
-00:02:01,000 --> 00:02:07,200
+10
+00:02:16,000 --> 00:02:22,700
 Typed data, verified identity, transparent provenance,
 observability, caching, and honest failure behavior.

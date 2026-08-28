@@ -1,17 +1,19 @@
-Hey, let me quickly show you ProfileProof. Ye koi static mock ya PPT nahi hai. Actual product Google Cloud Run par live chal raha hai, and the green operational badge is coming from the real API.
+Hey—let me give you a proper walkthrough of ProfileProof. This isn’t a static mock or a slide deck. The product is actually running on Google Cloud Run, and that green operational badge is coming from the live API.
 
-Basic flow simple hai. You give it a LinkedIn profile URL. Backend URL ko canonicalize karta hai, returned identity verify karta hai, professional fields normalize karta hai, and every response ke saath proper provenance deta hai.
+The basic flow is simple. You give it a LinkedIn profile URL. The backend canonicalizes the URL, verifies that the returned identity is the one you asked for, normalizes the professional fields, and attaches clear provenance to the response.
 
-Pehle main safe sample load kar raha hoon, just to show the complete interface without exposing private data. Ye bhi deployed API ko actual request hai. Here you can see employment, education, skills, certifications, languages, completeness, latency, cache state, and schema version.
+I’ll start with the safe sample so I can show the complete interface without exposing anyone’s private data. This still makes a real request to the deployed API. You can see employment, education, skills, certifications, languages, completeness, response time, cache state, and the schema version.
 
-Raw JSON tab important hai, because this is not just a fancy dashboard. Source mode, warnings, limitations, request ID, and cache flag sab clearly visible hain. Synthetic record ko sample label milta hai. It can never silently pretend to be real LinkedIn data.
+The raw JSON view matters because this is an API product, not just a good-looking dashboard. The source mode, warnings, limitations, request ID, and cache flag are all visible. A synthetic record is always marked as sample data. It can never quietly pretend to be a real LinkedIn result.
 
-Now this is the real-profile example. This response was captured from the stable production endpoint for Sean Thorne’s public profile. HTTP two hundred. Real name, location, experience, education, public acquisition mode, fifty percent completeness, and cached true on the verified repeat request. No fields are invented.
+Now here’s a real-profile example. This response was captured from the stable production endpoint for Sean Thorne’s public profile. It returned HTTP two hundred, with the real public name, location, experience, education, acquisition mode, fifty-percent completeness, and cached true on the verified repeat request. Nothing missing was invented.
 
-Failure handling bhi properly visible hai. Invalid URL upstream tak jaata hi nahi; it fails immediately with a typed problem-details response. LinkedIn public fields redact kar sakta hai, rate limit kar sakta hai, session expire ho sakta hai, or undocumented response change ho sakta hai. In every case, ProfileProof returns explicit warnings or an honest error.
+Failure handling is just as important. An invalid URL never reaches LinkedIn; it fails immediately with a typed problem-details response. LinkedIn can also redact fields, expire a session, change an undocumented response, or rate-limit the worker.
 
-One real infrastructure limitation hai. LinkedIn Google data-center egress ko block karta hai. So Cloud Run acquisition request ko is Mac par running residential worker tak forward karta hai. Tunnel automatically reconnect hota hai and its latest address republish karta hai.
+That rate limit is what caused the failed attempt on my own profile. LinkedIn rejected the residential request, and the relay originally hid that cause behind a generic five-oh-two. That is now patched. A throttle is preserved as four-twenty-nine, includes Retry-After, and opens a cooldown circuit so ProfileProof does not keep hammering LinkedIn. Other worker errors also keep their original safe explanation.
 
-But agar Mac off hai, GCP UI and health endpoint online rahenge, while real-profile acquisition provider unavailable return karega. Proper twenty-four-seven setup ke liye worker ko an always-on home device, mini PC, ya compliant residential proxy par move karna hoga.
+There is one honest infrastructure limitation. LinkedIn blocks Google data-center egress, so Cloud Run forwards acquisition to a residential worker running on this Mac. The tunnel reconnects automatically and republishes its current address.
 
-So basically, ProfileProof gives typed data, verified identity, transparent provenance, caching, observability, and honest failure behavior—through a real deployed system.
+If the Mac is switched off, the GCP interface and health endpoint remain online, while real-profile acquisition reports provider unavailable. For true twenty-four-seven operation, the worker should move to an always-on home device, mini PC, or a compliant residential proxy.
+
+So, in practical terms, ProfileProof gives you typed data, verified identity, transparent provenance, caching, observability, and failure behavior you can actually trust—all through a real deployed system.

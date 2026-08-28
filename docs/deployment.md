@@ -47,7 +47,7 @@ gcloud run deploy "$SERVICE" \
   --max-instances=1 \
   --concurrency=20 \
   --timeout=20s \
-  --set-env-vars="PROFILEPROOF_ENVIRONMENT=production,PROFILEPROOF_CACHE_TTL_SECONDS=3600,PROFILEPROOF_LINKEDIN_CALLS_PER_INSTANCE_PER_DAY=100,PROFILEPROOF_LINKEDIN_MIN_INTERVAL_SECONDS=5" \
+  --set-env-vars="PROFILEPROOF_ENVIRONMENT=production,PROFILEPROOF_CACHE_TTL_SECONDS=3600,PROFILEPROOF_LINKEDIN_CALLS_PER_INSTANCE_PER_DAY=100,PROFILEPROOF_LINKEDIN_MIN_INTERVAL_SECONDS=5,PROFILEPROOF_LINKEDIN_COOLDOWN_SECONDS=900" \
   --set-secrets="PROFILEPROOF_LINKEDIN_LI_AT=profileproof-linkedin-li-at:latest,PROFILEPROOF_LINKEDIN_JSESSIONID=profileproof-linkedin-jsessionid:latest" \
   --quiet
 ```
@@ -55,6 +55,10 @@ gcloud run deploy "$SERVICE" \
 One maximum instance makes the in-memory daily provider quota and serialized
 upstream pacing meaningful. Increase it only after moving coordination to a
 shared store or fronting the service with authenticated, centrally enforced quota.
+Set `PROFILEPROOF_LINKEDIN_COOLDOWN_SECONDS` to the minimum operational pause after
+LinkedIn returns `429` or `999` (default: 900 seconds). Numeric upstream
+`Retry-After` values take precedence. During cooldown, new acquisition requests
+fail fast without sending another LinkedIn request.
 
 ## Residential relay for blocked data-center egress
 
